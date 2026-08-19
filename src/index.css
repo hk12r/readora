@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -----------------------------
+   GLOBAL RESET
+----------------------------- */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-readora-cream text-readora-cocoa antialiased;
+  margin: 0;
+  font-family: "DM Sans", Arial, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* -----------------------------
+   REUSABLE COMPONENT CLASSES
+----------------------------- */
+
+@layer components {
+  .page-container {
+    @apply mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-10;
+  }
+
+  .section-title {
+    @apply font-display text-3xl font-bold text-readora-purple sm:text-4xl;
+  }
+
+  .section-subtitle {
+    @apply mt-2 max-w-2xl text-sm leading-6 text-readora-brown sm:text-base;
+  }
+
+  .primary-button {
+    @apply inline-flex items-center justify-center rounded-full
+    bg-readora-gold px-6 py-3 font-semibold text-readora-plum
+    shadow-gold transition-all duration-300
+    hover:-translate-y-1 hover:bg-readora-goldLight
+    focus:outline-none focus:ring-2 focus:ring-readora-gold
+    focus:ring-offset-2;
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center rounded-full
+    border border-readora-purple/20 bg-white/70 px-6 py-3
+    font-semibold text-readora-purple transition-all duration-300
+    hover:-translate-y-1 hover:border-readora-gold
+    hover:bg-readora-lavenderLight;
+  }
+
+  .glass-card {
+    @apply rounded-3xl border border-white/60
+    bg-white/60 shadow-magical backdrop-blur-xl;
+  }
+
+  .input-field {
+    @apply w-full rounded-2xl border border-readora-purple/15
+    bg-white/70 px-4 py-3 text-readora-cocoa outline-none
+    transition-all placeholder:text-readora-brown/50
+    focus:border-readora-gold
+    focus:ring-2 focus:ring-readora-gold/20;
+  }
+}
+
+/* -----------------------------
+   DECORATIVE BACKGROUND
+----------------------------- */
+
+.magical-background {
+  background:
+    radial-gradient(
+      circle at 15% 15%,
+      rgba(217, 196, 232, 0.45),
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 85% 10%,
+      rgba(201, 154, 61, 0.16),
+      transparent 25%
+    ),
+    linear-gradient(
+      135deg,
+      #fff9e8 0%,
+      #f9f0df 50%,
+      #f0e7f5 100%
+    );
+}
+
+/* -----------------------------
+   STAR FIELD
+----------------------------- */
+
+.star {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #c99a3d;
+  animation: twinkle 2.5s infinite ease-in-out;
+}
+
+/* -----------------------------
+   BOOK IMAGE
+----------------------------- */
+
+.book-cover {
+  transition:
+    transform 0.4s ease,
+    box-shadow 0.4s ease;
+}
+
+.book-card:hover .book-cover {
+  transform: translateY(-7px) rotate(-1deg);
+}
+
+/* -----------------------------
+   SCROLLBAR
+----------------------------- */
+
+::-webkit-scrollbar {
+  width: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fff9e8;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c99a3d;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5a1f62;
+}
+
+/* -----------------------------
+   SELECTION
+----------------------------- */
+
+::selection {
+  background: #d9c4e8;
+  color: #32102f;
+}
