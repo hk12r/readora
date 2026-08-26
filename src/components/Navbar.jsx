@@ -37,18 +37,19 @@ function Navbar() {
             onClick={() => setMobileOpen(false)}
           >
             <img
-                src={`${import.meta.env.BASE_URL}readora-logo.png`}
-                className="
-                  relative z-10
-                  h-auto
-                  w-full
-                  max-w-[300px]
-                  object-contain
-                  drop-shadow-2xl
-                  animate-float
-                  sm:max-w-[340px]
-                "
-              />
+              src={`${import.meta.env.BASE_URL}readora-logo.png`}
+              alt="Readora"
+              style={{
+                width: "56px",
+                height: "56px",
+                minWidth: "56px",
+                maxWidth: "56px",
+                minHeight: "56px",
+                maxHeight: "56px",
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
 
             <div className="leading-none">
               <p
