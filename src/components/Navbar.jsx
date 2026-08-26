@@ -39,13 +39,15 @@ function Navbar() {
             <img
               src={`${import.meta.env.BASE_URL}readora-logo.png`}
               alt="Readora"
+              width="56"
+              height="56"
               style={{
                 width: "56px",
                 height: "56px",
-                minWidth: "56px",
                 maxWidth: "56px",
-                minHeight: "56px",
                 maxHeight: "56px",
+                minWidth: "56px",
+                minHeight: "56px",
                 objectFit: "contain",
                 display: "block",
               }}
