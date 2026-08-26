@@ -598,8 +598,7 @@ function Home() {
               />
 
               <img
-                src="/readora-logo.png"
-                alt="READORA magical hourglass logo"
+                src={`${import.meta.env.BASE_URL}readora-logo.png`}
                 className="
                   relative z-10
                   h-auto
