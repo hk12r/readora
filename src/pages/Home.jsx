@@ -599,15 +599,16 @@ function Home() {
 
               <img
                 src={`${import.meta.env.BASE_URL}readora-logo.png`}
+                alt="Readora"
                 className="
                   relative z-10
                   h-auto
                   w-full
-                  max-w-[300px]
+                  max-w-[240px]
                   object-contain
                   drop-shadow-2xl
                   animate-float
-                  sm:max-w-[340px]
+                  sm:max-w-[280px]
                 "
               />
             </div>

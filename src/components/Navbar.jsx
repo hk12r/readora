@@ -37,8 +37,18 @@ function Navbar() {
             onClick={() => setMobileOpen(false)}
           >
             <img
-              src={`${import.meta.env.BASE_URL}readora-logo.png`}
-            />
+                src={`${import.meta.env.BASE_URL}readora-logo.png`}
+                className="
+                  relative z-10
+                  h-auto
+                  w-full
+                  max-w-[300px]
+                  object-contain
+                  drop-shadow-2xl
+                  animate-float
+                  sm:max-w-[340px]
+                "
+              />
 
             <div className="leading-none">
               <p
