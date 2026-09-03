@@ -3,7 +3,6 @@ import { useReadora } from "../context/ReadoraContext";
 
 function BookCard({ book, onView }) {
   const [imageError, setImageError] = useState(false);
-
   const { library, addToShelf, removeFromShelf } = useReadora();
 
   /* =========================================================
