@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Button from "../components/Button";
+import ReadingList from "../components/ReadingList";
+import { useReadora } from "../context/ReadoraContext";
 
 /* =========================================================
    READORA MOODS
@@ -144,15 +146,39 @@ const moodBooks = {
 };
 
 /* =========================================================
-   REUSABLE BOOK CARD
+   BOOK CARD
+   Uses GLOBAL CONTEXT API
 ========================================================= */
 
 function BookCard({ book, onSelect }) {
   const [imageError, setImageError] = useState(false);
 
+  const { library, addToShelf, removeFromShelf } = useReadora();
+
   const [title, author, isbn] = book;
 
   const coverUrl = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
+
+  const isAdded = library.entries.some(
+    (entry) => entry.isbn === isbn
+  );
+
+  const handleLibraryAction = (event) => {
+    event.stopPropagation();
+
+    if (isAdded) {
+      removeFromShelf(isbn);
+    } else {
+      addToShelf({
+        title,
+        author,
+        isbn,
+        genre: "Book",
+        rating: null,
+        pages: null,
+      });
+    }
+  };
 
   return (
     <article
@@ -266,6 +292,32 @@ function BookCard({ book, onSelect }) {
             →
           </span>
         </div>
+
+        {/* ===================================================
+            GLOBAL STATE ACTION
+        =================================================== */}
+
+        <button
+          onClick={handleLibraryAction}
+          className={`
+            mt-4
+            w-full
+            rounded-full
+            px-4 py-2.5
+            text-xs
+            font-bold
+            transition-all duration-200
+            ${
+              isAdded
+                ? "border border-readora-purple bg-readora-purple text-readora-cream"
+                : "bg-readora-gold text-readora-purple hover:shadow-gold"
+            }
+          `}
+        >
+          {isAdded
+            ? "✓ Added to Reading List"
+            : "+ Add to Reading List"}
+        </button>
       </div>
     </article>
   );
@@ -276,9 +328,30 @@ function BookCard({ book, onSelect }) {
 ========================================================= */
 
 function BookModal({ book, onClose }) {
+  const { library, addToShelf, removeFromShelf } = useReadora();
+
   if (!book) return null;
 
   const [title, author, isbn] = book;
+
+  const isAdded = library.entries.some(
+    (entry) => entry.isbn === isbn
+  );
+
+  const handleLibraryAction = () => {
+    if (isAdded) {
+      removeFromShelf(isbn);
+    } else {
+      addToShelf({
+        title,
+        author,
+        isbn,
+        genre: "Book",
+        rating: null,
+        pages: null,
+      });
+    }
+  };
 
   return (
     <div
@@ -357,8 +430,13 @@ function BookModal({ book, onClose }) {
               reading journey and discover where its pages take you.
             </p>
 
-            <Button className="mt-6 w-full">
-              Add to My Library ✦
+            <Button
+              className="mt-6 w-full"
+              onClick={handleLibraryAction}
+            >
+              {isAdded
+                ? "✓ Added to My Library"
+                : "Add to My Library ✦"}
             </Button>
           </div>
         </div>
@@ -445,8 +523,6 @@ function Home() {
           to-readora-lavenderLight
         "
       >
-        {/* Decorative celestial elements */}
-
         <div className="pointer-events-none absolute -left-20 top-20 h-64 w-64 rounded-full bg-readora-lavender/20 blur-3xl" />
 
         <div className="pointer-events-none absolute -right-20 top-10 h-72 w-72 rounded-full bg-readora-gold/10 blur-3xl" />
@@ -859,6 +935,16 @@ function Home() {
       </section>
 
       {/* =================================================
+          EXPERIMENT 3 — GLOBAL STATE OUTPUT
+      ================================================= */}
+
+      <section className="bg-readora-lavenderLight/30">
+        <div className="page-container py-14 sm:py-18">
+          <ReadingList />
+        </div>
+      </section>
+
+      {/* =================================================
           READING PHILOSOPHY
       ================================================= */}
 
@@ -867,9 +953,11 @@ function Home() {
           <div className="absolute left-10 top-10 text-2xl text-readora-gold">
             ✦
           </div>
+
           <div className="absolute right-20 top-24 text-xl text-readora-gold">
             ✧
           </div>
+
           <div className="absolute bottom-20 left-1/4 text-lg text-readora-gold">
             ✦
           </div>
