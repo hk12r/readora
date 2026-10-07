@@ -3,8 +3,24 @@ const Book = require("../models/Book");
 // GET all books
 const getBooks = async (req, res) => {
   try {
-    const books = await Book.find();
-    res.json(books);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const skip = (page - 1) * limit;
+
+    const books = await Book.find()
+      .skip(skip)
+      .limit(limit);
+
+    const totalBooks = await Book.countDocuments();
+
+    res.json({
+      page,
+      limit,
+      totalBooks,
+      totalPages: Math.ceil(totalBooks / limit),
+      books,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
