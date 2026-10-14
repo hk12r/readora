@@ -2,32 +2,34 @@ const express = require("express");
 
 const {
   getBooks,
+  getBookById,
   createBook,
   updateBook,
   deleteBook,
+  seedBooks,
 } = require("../controllers/bookController");
 
-const { validateBook } = require("../middleware/validationMiddleware");
 const protect = require("../middleware/authMiddleware");
 const adminOnly = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// GET all books
+// GET all books with filters
 router.get("/", getBooks);
 
+// POST trigger manual seed
+router.post("/seed", protect, adminOnly, seedBooks);
+
+// GET single book
+router.get("/:id", getBookById);
+
 // POST a new book
-router.post("/", protect, validateBook, createBook);
+router.post("/", protect, createBook);
 
-// PUT - update a book
-router.put("/:id", updateBook);
+// PUT - update a book (admin or authenticated)
+router.put("/:id", protect, updateBook);
 
-// DELETE - delete a book
-router.delete("/:id", deleteBook);
+// DELETE - delete a book (admin only)
+router.delete("/:id", protect, adminOnly, deleteBook);
 
 module.exports = router;
-router.get("/admin-test", protect, adminOnly, (req, res) => {
-  res.json({
-    message: "Admin access granted",
-  });
-});

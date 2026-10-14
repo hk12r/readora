@@ -33,3 +33,6 @@ dist-ssr/
 
 # Git
 .git
+
+# Large scratch and output files
+readora-*.*

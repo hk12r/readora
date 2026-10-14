@@ -1,385 +1,529 @@
-import React, { createContext, useContext, useState } from "react";
-
-/* =========================================================
-   READORA CONTEXT
-   Global State Management using Context API
-========================================================= */
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import api from "../services/api";
 
 const ReadoraContext = createContext(null);
 
-/* =========================================================
-   READORA PROVIDER
-========================================================= */
-
 export function ReadoraProvider({ children }) {
-
-  /* =======================================================
-     AUTH STATE
-  ======================================================= */
-
-  const [auth, setAuth] = useState({
-    user: null,
-    token: null,
-    role: "user",
-    loading: false,
+  // Auth state
+  const [auth, setAuth] = useState(() => {
+    const savedToken = localStorage.getItem("readora_token");
+    const savedUser = localStorage.getItem("readora_user");
+    return {
+      user: savedUser ? JSON.parse(savedUser) : null,
+      token: savedToken || null,
+      role: savedUser ? JSON.parse(savedUser).role || "user" : "user",
+      loading: false,
+    };
   });
 
-  /* =======================================================
-     LIBRARY STATE
-  ======================================================= */
+  // Auth modal prompt state for logged-out visitors
+  const [authModal, setAuthModal] = useState({
+    isOpen: false,
+    message: "",
+    bookToSave: null,
+  });
 
+  // Library state
   const [library, setLibrary] = useState({
     shelves: {
       currentlyReading: [],
       wantToRead: [],
-      finished: [],
+      read: [],
+      dnf: [],
+      favorites: [],
+      owned: [],
+      upNext: [],
     },
-
     entries: [],
-
-    selectedBook: null,
-
+    customShelves: [],
+    tags: [],
     loading: false,
   });
 
-  /* =======================================================
-     PROGRESS STATE
-  ======================================================= */
-
-  const [progress, setProgress] = useState({
-    currentBookProgress: 0,
-    streaks: 0,
-    loading: false,
-  });
-
-  /* =======================================================
-     NOTIFICATION STATE
-  ======================================================= */
-
+  // Notifications state
   const [notifications, setNotifications] = useState({
-    notifications: [],
+    list: [],
     unreadCount: 0,
   });
 
-  /* =======================================================
-     UI STATE
-  ======================================================= */
+  // Toast alert state
+  const [toast, setToast] = useState(null);
 
-  const [ui, setUi] = useState({
-    theme: "light",
-    sidebar: false,
-    loading: false,
-  });
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  };
 
-  /* =======================================================
-     AUTH ACTIONS
-  ======================================================= */
-
+  // Auth actions
   const login = (userData, token) => {
+    localStorage.setItem("readora_token", token);
+    localStorage.setItem("readora_user", JSON.stringify(userData));
     setAuth({
       user: userData,
       token: token,
       role: userData?.role || "user",
       loading: false,
     });
+    showToast(`Welcome back, ${userData.name}! ✦`);
+
+    // If there was a pending book to save from modal prompt, save it now
+    if (authModal.bookToSave) {
+      setTimeout(() => {
+        addToShelf(authModal.bookToSave, "Want to Read", true);
+        setAuthModal({ isOpen: false, message: "", bookToSave: null });
+      }, 500);
+    }
   };
 
   const logout = () => {
+    localStorage.removeItem("readora_token");
+    localStorage.removeItem("readora_user");
     setAuth({
       user: null,
       token: null,
       role: "user",
       loading: false,
     });
+    setLibrary({
+      shelves: {
+        currentlyReading: [],
+        wantToRead: [],
+        read: [],
+        dnf: [],
+        favorites: [],
+        owned: [],
+        upNext: [],
+      },
+      entries: [],
+      customShelves: [],
+      tags: [],
+      loading: false,
+    });
+    showToast("You have been signed out.");
   };
 
-  const updateProfile = (updatedUser) => {
-    setAuth((currentAuth) => ({
-      ...currentAuth,
-      user: {
-        ...currentAuth.user,
-        ...updatedUser,
+  const demoLogin = async () => {
+    try {
+      // First try to login as demo user
+      const res = await api.login({
+        email: "reader@readora.com",
+        password: "password123",
+      }).catch(async () => {
+        // If demo user does not exist yet, register them
+        return await api.register({
+          name: "Lyra Valerius",
+          email: "reader@readora.com",
+          password: "password123",
+          role: "user",
+        });
+      });
+
+      if (res && res.token) {
+        login(res.user, res.token);
+      }
+    } catch (err) {
+      // Offline fallback demo user
+      const mockUser = {
+        _id: "demo_user_1",
+        name: "Lyra Valerius",
+        email: "reader@readora.com",
+        role: "user",
+        level: 3,
+        xp: 480,
+        avatar: "",
+        bio: "Night owl explorer navigating speculative and cosy worlds.",
+        favoriteQuote: "There is no friend as loyal as a book.",
+        favoriteGenres: ["Fantasy", "Literary Fiction", "Mystery"],
+        streak: { current: 5, longest: 14 },
+        badges: [
+          { id: "b1", name: "New Explorer", icon: "✦", description: "Began journey" },
+          { id: "b2", name: "First Finish", icon: "🏆", description: "Completed a book" },
+        ],
+        readingGoal: { annualTarget: 25, monthlyTarget: 2, pagesTarget: 7500 },
+      };
+      login(mockUser, "demo_jwt_token_local");
+    }
+  };
+
+  const openAuthModal = ({ message, bookToSave = null }) => {
+    setAuthModal({
+      isOpen: true,
+      message: message || "Sign in to save books to your personal reading library.",
+      bookToSave,
+    });
+  };
+
+  const closeAuthModal = () => {
+    setAuthModal({ isOpen: false, message: "", bookToSave: null });
+  };
+
+  const updateProfile = async (profileData) => {
+    try {
+      const res = await api.updateProfile(profileData);
+      if (res?.user) {
+        setAuth((prev) => ({
+          ...prev,
+          user: res.user,
+        }));
+        localStorage.setItem("readora_user", JSON.stringify(res.user));
+        showToast("Profile updated successfully!");
+      }
+    } catch (err) {
+      // Local update fallback
+      setAuth((prev) => {
+        const updated = { ...prev.user, ...profileData };
+        localStorage.setItem("readora_user", JSON.stringify(updated));
+        return { ...prev, user: updated };
+      });
+      showToast("Profile updated locally.");
+    }
+  };
+
+  // Fetch Library
+  const fetchLibrary = useCallback(async () => {
+    if (!auth.token) return;
+
+    setLibrary((prev) => ({ ...prev, loading: true }));
+    try {
+      const data = await api.getLibrary();
+      if (data) {
+        setLibrary({
+          shelves: data.shelves || {
+            currentlyReading: [],
+            wantToRead: [],
+            read: [],
+            dnf: [],
+            favorites: [],
+            owned: [],
+            upNext: [],
+          },
+          entries: data.entries || [],
+          customShelves: data.customShelves || [],
+          tags: data.tags || [],
+          loading: false,
+        });
+      }
+    } catch (err) {
+      setLibrary((prev) => ({ ...prev, loading: false }));
+    }
+  }, [auth.token]);
+
+  useEffect(() => {
+    if (auth.token) {
+      fetchLibrary();
+    }
+  }, [auth.token, fetchLibrary]);
+
+  // Fetch Notifications
+  const fetchNotifications = useCallback(async () => {
+    if (!auth.token) return;
+    try {
+      const res = await api.getNotifications();
+      if (res) {
+        setNotifications({
+          list: res.notifications || [],
+          unreadCount: res.unreadCount || 0,
+        });
+      }
+    } catch (err) {
+      // silent catch
+    }
+  }, [auth.token]);
+
+  useEffect(() => {
+    if (auth.token) {
+      fetchNotifications();
+    }
+  }, [auth.token, fetchNotifications]);
+
+  // Add Book to Shelf
+  const addToShelf = async (bookInput, shelf = "Want to Read", bypassAuthCheck = false) => {
+    // Crucial requirement: Show login pop up if not logged in!
+    if (!auth.user && !bypassAuthCheck) {
+      openAuthModal({
+        message: `Sign in to add "${bookInput.title || "this book"}" to your reading list.`,
+        bookToSave: bookInput,
+      });
+      return false;
+    }
+
+    try {
+      const payload = {
+        bookId: bookInput._id || bookInput.id,
+        bookData: {
+          title: bookInput.title,
+          author: bookInput.author,
+          isbn: bookInput.isbn || "0000000000000",
+          genre: bookInput.genre || "Fiction",
+          pages: bookInput.pages || 320,
+          rating: bookInput.rating || 4.2,
+          cover:
+            bookInput.cover ||
+            (bookInput.isbn ? `https://covers.openlibrary.org/b/isbn/${bookInput.isbn}-M.jpg` : ""),
+          blurb: bookInput.blurb || "A memorable story to treasure in your library.",
+          publicationYear: bookInput.publicationYear || 2020,
+          country: bookInput.country || "International",
+          pace: bookInput.pace || "Medium",
+          moods: bookInput.moods || ["Comforting"],
+          isFiction: bookInput.isFiction !== undefined ? bookInput.isFiction : true,
+        },
+        shelf,
+      };
+
+      const savedEntry = await api.addToLibrary(payload);
+      showToast(`Added to ${shelf}! +25 XP ✦`);
+      await fetchLibrary();
+      return savedEntry;
+    } catch (err) {
+      // Local optimistic fallback
+      const entryObj = {
+        _id: `local_${Date.now()}`,
+        isbn: bookInput.isbn,
+        bookId: bookInput,
+        shelf,
+        currentPage: shelf === "Read" ? bookInput.pages || 300 : 0,
+        percentage: shelf === "Read" ? 100 : 0,
+        isFavorite: false,
+        isOwned: false,
+        isUpNext: false,
+      };
+
+      setLibrary((prev) => {
+        const exists = prev.entries.some(
+          (e) => e.isbn === bookInput.isbn || e.bookId?.isbn === bookInput.isbn
+        );
+        if (exists) return prev;
+
+        return {
+          ...prev,
+          entries: [entryObj, ...prev.entries],
+          shelves: {
+            ...prev.shelves,
+            wantToRead: shelf === "Want to Read" ? [entryObj, ...prev.shelves.wantToRead] : prev.shelves.wantToRead,
+            currentlyReading: shelf === "Currently Reading" ? [entryObj, ...prev.shelves.currentlyReading] : prev.shelves.currentlyReading,
+            read: shelf === "Read" ? [entryObj, ...prev.shelves.read] : prev.shelves.read,
+            dnf: shelf === "DNF" ? [entryObj, ...prev.shelves.dnf] : prev.shelves.dnf,
+          },
+        };
+      });
+      showToast(`Added to ${shelf}! ✦`);
+      return entryObj;
+    }
+  };
+
+  // Remove from shelf
+  const removeFromShelf = async (bookIdentifier) => {
+    // Find entry
+    const entry = library.entries.find(
+      (e) => e._id === bookIdentifier || e.isbn === bookIdentifier || e.bookId?.isbn === bookIdentifier
+    );
+
+    if (entry && entry._id && !entry._id.startsWith("local_")) {
+      try {
+        await api.removeFromLibrary(entry._id);
+      } catch (err) {
+        console.warn("Could not delete from server:", err.message);
+      }
+    }
+
+    setLibrary((prev) => ({
+      ...prev,
+      entries: prev.entries.filter(
+        (e) =>
+          e._id !== bookIdentifier &&
+          e.isbn !== bookIdentifier &&
+          e.bookId?.isbn !== bookIdentifier
+      ),
+      shelves: {
+        currentlyReading: prev.shelves.currentlyReading.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
+        wantToRead: prev.shelves.wantToRead.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
+        read: prev.shelves.read.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
+        dnf: prev.shelves.dnf.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
+        favorites: prev.shelves.favorites.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
+        owned: prev.shelves.owned.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
+        upNext: prev.shelves.upNext.filter(
+          (e) => e._id !== bookIdentifier && e.bookId?.isbn !== bookIdentifier
+        ),
       },
     }));
+
+    showToast("Book removed from library.");
   };
 
-  /* =======================================================
-     LIBRARY ACTIONS
-  ======================================================= */
+  // Update shelf / status
+  const updateShelf = async (entryId, newShelf) => {
+    try {
+      await api.updateLibraryEntry(entryId, { shelf: newShelf });
+      showToast(`Shelf moved to: ${newShelf} ✦`);
+      await fetchLibrary();
+    } catch (err) {
+      // Local optimistic update
+      setLibrary((prev) => {
+        const updatedEntries = prev.entries.map((e) =>
+          e._id === entryId ? { ...e, shelf: newShelf } : e
+        );
+        return {
+          ...prev,
+          entries: updatedEntries,
+        };
+      });
+      showToast(`Updated shelf to ${newShelf}`);
+    }
+  };
 
-  const fetchLibrary = () => {
-    setLibrary((currentLibrary) => ({
-      ...currentLibrary,
-      loading: true,
-    }));
-
-    /*
-      Backend API will be connected in a later experiment.
-      For now, this demonstrates the state-management action.
-    */
-
-    setTimeout(() => {
-      setLibrary((currentLibrary) => ({
-        ...currentLibrary,
-        loading: false,
+  // Update progress
+  const updateProgress = async (entryId, currentPage, percentage) => {
+    try {
+      await api.updateLibraryEntry(entryId, { currentPage, percentage });
+      showToast("Progress logged! +15 XP ✦");
+      await fetchLibrary();
+    } catch (err) {
+      setLibrary((prev) => ({
+        ...prev,
+        entries: prev.entries.map((e) =>
+          e._id === entryId ? { ...e, currentPage, percentage } : e
+        ),
       }));
-    }, 500);
+    }
   };
 
-  /* =======================================================
-     ADD ITEM
-     REQUIRED FOR EXPERIMENT 3
-  ======================================================= */
+  // Toggle favorite
+  const toggleFavorite = async (entryId) => {
+    const entry = library.entries.find((e) => e._id === entryId);
+    if (!entry) return;
+    const newFav = !entry.isFavorite;
 
-  const addToShelf = (book, shelf = "wantToRead") => {
-    setLibrary((currentLibrary) => {
-
-      /* Prevent duplicate books */
-
-      const alreadyExists = currentLibrary.entries.some(
-        (entry) => entry.isbn === book.isbn
-      );
-
-      if (alreadyExists) {
-        return currentLibrary;
-      }
-
-      const newEntry = {
-        ...book,
-        shelf,
-        addedAt: new Date().toISOString(),
-      };
-
-      return {
-        ...currentLibrary,
-
-        entries: [
-          ...currentLibrary.entries,
-          newEntry,
-        ],
-
-        shelves: {
-          ...currentLibrary.shelves,
-
-          [shelf]: [
-            ...currentLibrary.shelves[shelf],
-            newEntry,
-          ],
-        },
-      };
-    });
-  };
-
-  /* =======================================================
-     REMOVE ITEM
-     REQUIRED FOR EXPERIMENT 3
-  ======================================================= */
-
-  const removeFromShelf = (bookIsbn) => {
-    setLibrary((currentLibrary) => {
-
-      const bookToRemove = currentLibrary.entries.find(
-        (entry) => entry.isbn === bookIsbn
-      );
-
-      if (!bookToRemove) {
-        return currentLibrary;
-      }
-
-      return {
-        ...currentLibrary,
-
-        entries: currentLibrary.entries.filter(
-          (entry) => entry.isbn !== bookIsbn
+    try {
+      await api.updateLibraryEntry(entryId, { isFavorite: newFav });
+      showToast(newFav ? "Added to Favorites ❤️" : "Removed from Favorites");
+      await fetchLibrary();
+    } catch (err) {
+      setLibrary((prev) => ({
+        ...prev,
+        entries: prev.entries.map((e) =>
+          e._id === entryId ? { ...e, isFavorite: newFav } : e
         ),
-
-        shelves: {
-          ...currentLibrary.shelves,
-
-          [bookToRemove.shelf]:
-            currentLibrary.shelves[bookToRemove.shelf].filter(
-              (entry) => entry.isbn !== bookIsbn
-            ),
-        },
-      };
-    });
+      }));
+    }
   };
 
-  /* =======================================================
-     UPDATE SHELF
-  ======================================================= */
+  // Toggle owned
+  const toggleOwned = async (entryId) => {
+    const entry = library.entries.find((e) => e._id === entryId);
+    if (!entry) return;
+    const newOwned = !entry.isOwned;
 
-  const updateShelf = (bookIsbn, newShelf) => {
-    setLibrary((currentLibrary) => {
-
-      const book = currentLibrary.entries.find(
-        (entry) => entry.isbn === bookIsbn
-      );
-
-      if (!book) {
-        return currentLibrary;
-      }
-
-      const updatedBook = {
-        ...book,
-        shelf: newShelf,
-      };
-
-      return {
-        ...currentLibrary,
-
-        entries: currentLibrary.entries.map(
-          (entry) =>
-            entry.isbn === bookIsbn
-              ? updatedBook
-              : entry
+    try {
+      await api.updateLibraryEntry(entryId, { isOwned: newOwned });
+      showToast(newOwned ? "Marked as Owned 📖" : "Unmarked as Owned");
+      await fetchLibrary();
+    } catch (err) {
+      setLibrary((prev) => ({
+        ...prev,
+        entries: prev.entries.map((e) =>
+          e._id === entryId ? { ...e, isOwned: newOwned } : e
         ),
-
-        shelves: {
-          ...currentLibrary.shelves,
-
-          [book.shelf]:
-            currentLibrary.shelves[book.shelf].filter(
-              (entry) => entry.isbn !== bookIsbn
-            ),
-
-          [newShelf]: [
-            ...currentLibrary.shelves[newShelf],
-            updatedBook,
-          ],
-        },
-      };
-    });
+      }));
+    }
   };
 
-  /* =======================================================
-     SELECT BOOK
-  ======================================================= */
+  // Toggle Up Next
+  const toggleUpNext = async (entryId) => {
+    const entry = library.entries.find((e) => e._id === entryId);
+    if (!entry) return;
+    const newUpNext = !entry.isUpNext;
 
-  const selectBook = (book) => {
-    setLibrary((currentLibrary) => ({
-      ...currentLibrary,
-      selectedBook: book,
-    }));
+    try {
+      await api.updateLibraryEntry(entryId, { isUpNext: newUpNext });
+      showToast(newUpNext ? "Added to Up Next reading queue ✦" : "Removed from queue");
+      await fetchLibrary();
+    } catch (err) {
+      setLibrary((prev) => ({
+        ...prev,
+        entries: prev.entries.map((e) =>
+          e._id === entryId ? { ...e, isUpNext: newUpNext } : e
+        ),
+      }));
+    }
   };
 
-  /* =======================================================
-     PROGRESS ACTIONS
-  ======================================================= */
-
-  const updateProgress = (percentage) => {
-    setProgress((currentProgress) => ({
-      ...currentProgress,
-      currentBookProgress: percentage,
-    }));
+  // Set DNF
+  const markAsDnf = async (entryId, dnfReason, dnfPage) => {
+    try {
+      await api.updateLibraryEntry(entryId, {
+        shelf: "DNF",
+        dnfReason,
+        dnfPage,
+      });
+      showToast("Book moved to DNF shelf with reason.");
+      await fetchLibrary();
+    } catch (err) {
+      setLibrary((prev) => ({
+        ...prev,
+        entries: prev.entries.map((e) =>
+          e._id === entryId ? { ...e, shelf: "DNF", dnfReason, dnfPage } : e
+        ),
+      }));
+    }
   };
-
-  const updateStreak = (streak) => {
-    setProgress((currentProgress) => ({
-      ...currentProgress,
-      streaks: streak,
-    }));
-  };
-
-  /* =======================================================
-     NOTIFICATION ACTIONS
-  ======================================================= */
-
-  const addNotification = (notification) => {
-    setNotifications((currentNotifications) => ({
-      notifications: [
-        ...currentNotifications.notifications,
-        notification,
-      ],
-
-      unreadCount:
-        currentNotifications.unreadCount + 1,
-    }));
-  };
-
-  const markNotificationsRead = () => {
-    setNotifications((currentNotifications) => ({
-      ...currentNotifications,
-      unreadCount: 0,
-    }));
-  };
-
-  /* =======================================================
-     UI ACTIONS
-  ======================================================= */
-
-  const toggleSidebar = () => {
-    setUi((currentUi) => ({
-      ...currentUi,
-      sidebar: !currentUi.sidebar,
-    }));
-  };
-
-  const setTheme = (theme) => {
-    setUi((currentUi) => ({
-      ...currentUi,
-      theme,
-    }));
-  };
-
-  /* =======================================================
-     CONTEXT VALUE
-  ======================================================= */
 
   const value = {
-
-    /* Authentication */
     auth,
     login,
     logout,
+    demoLogin,
     updateProfile,
-
-    /* Library */
+    authModal,
+    openAuthModal,
+    closeAuthModal,
     library,
     fetchLibrary,
     addToShelf,
-    updateShelf,
     removeFromShelf,
-    selectBook,
-
-    /* Progress */
-    progress,
+    updateShelf,
     updateProgress,
-    updateStreak,
-
-    /* Notifications */
+    toggleFavorite,
+    toggleOwned,
+    toggleUpNext,
+    markAsDnf,
     notifications,
-    addNotification,
-    markNotificationsRead,
-
-    /* UI */
-    ui,
-    toggleSidebar,
-    setTheme,
+    fetchNotifications,
+    toast,
+    showToast,
   };
 
   return (
     <ReadoraContext.Provider value={value}>
       {children}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[300] flex items-center gap-3 rounded-2xl border border-readora-gold/30 bg-readora-purple px-5 py-3.5 text-sm font-bold text-readora-cream shadow-2xl animate-fade-in backdrop-blur-md">
+          <span className="text-readora-gold">✦</span>
+          <span>{toast.message}</span>
+        </div>
+      )}
     </ReadoraContext.Provider>
   );
 }
 
-/* =========================================================
-   CUSTOM HOOK
-   Allows components to access the global Context
-========================================================= */
-
 export function useReadora() {
-
   const context = useContext(ReadoraContext);
-
   if (!context) {
-    throw new Error(
-      "useReadora must be used inside ReadoraProvider"
-    );
+    throw new Error("useReadora must be used within a ReadoraProvider");
   }
-
   return context;
 }
 

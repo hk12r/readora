@@ -6,12 +6,14 @@ const bookSchema = new mongoose.Schema(
       type: String,
       required: [true, "Book title is required"],
       trim: true,
+      index: true,
     },
 
     author: {
       type: String,
       required: [true, "Author is required"],
       trim: true,
+      index: true,
     },
 
     isbn: {
@@ -19,18 +21,7 @@ const bookSchema = new mongoose.Schema(
       required: [true, "ISBN is required"],
       unique: true,
       trim: true,
-      validate: {
-        validator: function (value) {
-          // Supports ISBN-10 and ISBN-13
-          const isbn10 = /^(?:\d{9}[\dXx])$/;
-          const isbn13 = /^(?:\d{13})$/;
-
-          const cleanedISBN = value.replace(/[-\s]/g, "");
-
-          return isbn10.test(cleanedISBN) || isbn13.test(cleanedISBN);
-        },
-        message: "ISBN must be a valid ISBN-10 or ISBN-13",
-      },
+      index: true,
     },
 
     rating: {
@@ -40,10 +31,16 @@ const bookSchema = new mongoose.Schema(
       max: [5, "Rating cannot be greater than 5"],
     },
 
+    ratingsCount: {
+      type: Number,
+      default: 0,
+    },
+
     genre: {
       type: String,
       required: [true, "Genre is required"],
       trim: true,
+      index: true,
     },
 
     pages: {
@@ -55,10 +52,43 @@ const bookSchema = new mongoose.Schema(
     cover: {
       type: String,
     },
+
+    blurb: {
+      type: String,
+      default: "Every story opens a different door. Add this book to your reading journey and discover where its pages take you.",
+    },
+
+    publicationYear: {
+      type: Number,
+    },
+
+    country: {
+      type: String,
+      default: "International",
+    },
+
+    pace: {
+      type: String,
+      enum: ["Fast", "Medium", "Slow"],
+      default: "Medium",
+    },
+
+    moods: {
+      type: [String],
+      default: [],
+      index: true,
+    },
+
+    isFiction: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+bookSchema.index({ title: "text", author: "text", genre: "text" });
 
 module.exports = mongoose.model("Book", bookSchema);

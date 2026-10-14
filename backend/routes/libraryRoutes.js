@@ -5,20 +5,30 @@ const {
   getLibrary,
   updateLibraryEntry,
   removeFromLibrary,
+  importLibrary,
+  exportLibrary,
 } = require("../controllers/libraryController");
+
+const protect = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-// POST - Add a book to user's library
-router.post("/", addToLibrary);
+// GET - Get user's library
+router.get("/", protect, getLibrary);
 
-// GET - Get all library entries
-router.get("/", getLibrary);
+// POST - Add book to library
+router.post("/", protect, addToLibrary);
+
+// POST - Import CSV / Goodreads / StoryGraph / Fable
+router.post("/import", protect, importLibrary);
+
+// GET - Export user library
+router.get("/export", protect, exportLibrary);
 
 // PUT - Update a library entry
-router.put("/:id", updateLibraryEntry);
+router.put("/:id", protect, updateLibraryEntry);
 
 // DELETE - Remove a book from library
-router.delete("/:id", removeFromLibrary);
+router.delete("/:id", protect, removeFromLibrary);
 
 module.exports = router;

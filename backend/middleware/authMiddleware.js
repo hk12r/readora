@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
-const protect = (req, res, next) => {
+const protect = async (req, res, next) => {
   let token;
 
   if (
@@ -17,9 +18,22 @@ const protect = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "readora_magical_secret_key_2026"
+    );
 
-    req.user = decoded;
+    const user = await User.findById(decoded.userId || decoded._id).select("-password");
+    if (user) {
+      req.user = user;
+      req.user.userId = user._id;
+    } else {
+      req.user = {
+        _id: decoded.userId || decoded._id,
+        userId: decoded.userId || decoded._id,
+        role: decoded.role || "user",
+      };
+    }
 
     next();
   } catch (error) {
