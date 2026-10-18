@@ -3,6 +3,7 @@ const BookClub = require("../models/BookClub");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 const LibraryEntry = require("../models/LibraryEntry");
+const { emitToUser, emitToBuddyRead } = require("../services/socketService");
 
 // ================= BUDDY READS =================
 const createBuddyRead = async (req, res) => {
@@ -120,13 +121,52 @@ const updateBuddyProgress = async (req, res) => {
       participant.percentage = Math.min(100, Math.round((participant.currentPage / total) * 100));
 
       // Check milestones
+      const newlyCompletedMilestones = [];
       buddyRead.milestones.forEach((m) => {
         if (participant.currentPage >= m.targetPage && !m.completedBy.includes(userId)) {
           m.completedBy.push(userId);
+          newlyCompletedMilestones.push(m);
         }
       });
 
       await buddyRead.save();
+
+      // Emit real-time buddyread:progress event
+      emitToBuddyRead(buddyRead._id, "buddyread:progress", {
+        buddyReadId: buddyRead._id.toString(),
+        userId: userId.toString(),
+        userName: req.user.name,
+        currentPage: participant.currentPage,
+        percentage: participant.percentage,
+        milestones: buddyRead.milestones,
+      });
+
+      // Emit challenge:milestone and notification if milestones reached
+      for (const m of newlyCompletedMilestones) {
+        const milestoneData = {
+          buddyReadId: buddyRead._id.toString(),
+          milestoneId: m._id,
+          name: m.name,
+          targetPage: m.targetPage,
+          userId: userId.toString(),
+          userName: req.user.name,
+          bookTitle: buddyRead.bookId?.title || buddyRead.title,
+        };
+
+        emitToBuddyRead(buddyRead._id, "challenge:milestone", milestoneData);
+        emitToUser(userId, "challenge:milestone", milestoneData);
+
+        const notif = await Notification.create({
+          userId,
+          senderId: userId,
+          senderName: "Readora Milestones",
+          type: "milestone",
+          title: "Milestone Reached! ✦",
+          message: `You reached the "${m.name}" milestone at page ${m.targetPage}!`,
+          link: "/community",
+        });
+        emitToUser(userId, "notification:new", notif);
+      }
     }
 
     res.json(buddyRead);
@@ -156,7 +196,37 @@ const postBuddyMessage = async (req, res) => {
     buddyRead.messages.push(newMsg);
     await buddyRead.save();
 
-    res.status(201).json(newMsg);
+    const savedMsg = buddyRead.messages[buddyRead.messages.length - 1];
+
+    // Emit real-time buddyread:message event
+    emitToBuddyRead(buddyRead._id, "buddyread:message", {
+      buddyReadId: buddyRead._id.toString(),
+      message: savedMsg,
+    });
+
+    // Notify other participants
+    const otherParticipantIds = [
+      ...new Set(
+        [buddyRead.creatorId, ...buddyRead.participants.map((p) => p.userId)]
+          .filter((id) => id && id.toString() !== userId.toString())
+          .map((id) => id.toString())
+      ),
+    ];
+
+    for (const targetId of otherParticipantIds) {
+      const notif = await Notification.create({
+        userId: targetId,
+        senderId: userId,
+        senderName: req.user.name || "Reader",
+        type: "buddy_read",
+        title: "New Buddy Read Message",
+        message: `${req.user.name || "A reader"} sent a message in "${buddyRead.title}"`,
+        link: "/community",
+      });
+      emitToUser(targetId, "notification:new", notif);
+    }
+
+    res.status(201).json(savedMsg);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -295,7 +365,7 @@ const toggleFollowUser = async (req, res) => {
       targetUser.followers.push(currentUserId);
 
       // Notify target
-      await Notification.create({
+      const notif = await Notification.create({
         userId: targetUserId,
         senderId: currentUserId,
         senderName: currentUser.name,
@@ -303,6 +373,16 @@ const toggleFollowUser = async (req, res) => {
         title: "New Follower",
         message: `${currentUser.name} started following your reading universe!`,
       });
+
+      // Real-time follow:new & notification:new events
+      emitToUser(targetUserId, "follow:new", {
+        followerId: currentUserId.toString(),
+        followerName: currentUser.name,
+        followerAvatar: currentUser.avatar || "",
+        followersCount: targetUser.followers.length,
+      });
+
+      emitToUser(targetUserId, "notification:new", notif);
     }
 
     await currentUser.save();

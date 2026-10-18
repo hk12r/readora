@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import api from "../services/api";
+import { connectSocket, disconnectSocket, getSocket } from "../services/socket";
 
 const ReadoraContext = createContext(null);
 
@@ -48,6 +49,7 @@ export function ReadoraProvider({ children }) {
 
   // Toast alert state
   const [toast, setToast] = useState(null);
+  const [socket, setSocket] = useState(null);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -237,6 +239,86 @@ export function ReadoraProvider({ children }) {
       fetchNotifications();
     }
   }, [auth.token, fetchNotifications]);
+
+  // Socket.IO Real-time Lifecycle & Global Listeners
+  useEffect(() => {
+    if (!auth.token) {
+      disconnectSocket();
+      setSocket(null);
+      return;
+    }
+
+    const s = connectSocket(auth.token);
+    setSocket(s);
+
+    // 1. Event: notification:new
+    const handleNewNotification = (data) => {
+      console.log("[Socket.IO Client] Received notification:new", data);
+      setNotifications((prev) => ({
+        list: [data, ...(prev.list || [])],
+        unreadCount: (prev.unreadCount || 0) + 1,
+      }));
+      showToast(`🔔 ${data.title}: ${data.message}`, "info");
+    };
+
+    // 2. Event: follow:new
+    const handleNewFollow = (data) => {
+      console.log("[Socket.IO Client] Received follow:new", data);
+      showToast(`👥 ${data.followerName} started following your reading universe! ✦`, "success");
+    };
+
+    // 3. Event: challenge:milestone
+    const handleMilestone = (data) => {
+      console.log("[Socket.IO Client] Received challenge:milestone", data);
+      showToast(`🏆 Milestone Achieved: ${data.name || data.title}! +${data.xpAwarded || 50} XP ✦`, "success");
+      if (data.totalXp) {
+        setAuth((prev) =>
+          prev.user
+            ? {
+                ...prev,
+                user: {
+                  ...prev.user,
+                  xp: data.totalXp,
+                  level: data.userLevel || prev.user.level,
+                },
+              }
+            : prev
+        );
+      }
+    };
+
+    // 4. Event: progress:updated
+    const handleProgressUpdated = (data) => {
+      console.log("[Socket.IO Client] Received progress:updated", data);
+      if (data?.entryId) {
+        setLibrary((prev) => ({
+          ...prev,
+          entries: prev.entries.map((e) =>
+            e._id === data.entryId
+              ? {
+                  ...e,
+                  currentPage: data.currentPage !== undefined ? data.currentPage : e.currentPage,
+                  percentage: data.percentage !== undefined ? data.percentage : e.percentage,
+                  shelf: data.shelf || e.shelf,
+                }
+              : e
+          ),
+        }));
+      }
+    };
+
+    s.on("notification:new", handleNewNotification);
+    s.on("follow:new", handleNewFollow);
+    s.on("challenge:milestone", handleMilestone);
+    s.on("progress:updated", handleProgressUpdated);
+
+    return () => {
+      s.off("notification:new", handleNewNotification);
+      s.off("follow:new", handleNewFollow);
+      s.off("challenge:milestone", handleMilestone);
+      s.off("progress:updated", handleProgressUpdated);
+    };
+  }, [auth.token]);
 
   // Add Book to Shelf
   const addToShelf = async (bookInput, shelf = "Want to Read", bypassAuthCheck = false) => {
@@ -502,6 +584,7 @@ export function ReadoraProvider({ children }) {
     markAsDnf,
     notifications,
     fetchNotifications,
+    socket,
     toast,
     showToast,
   };

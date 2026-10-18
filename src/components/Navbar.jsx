@@ -112,7 +112,7 @@ function Navbar() {
             {auth.user ? (
               <div className="flex items-center gap-3">
                 {/* NOTIFICATIONS DROPDOWN */}
-                <div className="relative" ref={notifRef}>
+                <div id="navbar-notif-container" className="relative p-2" ref={notifRef}>
                   <button
                     onClick={() => {
                       setNotifOpen(!notifOpen);
@@ -130,7 +130,7 @@ function Navbar() {
                   </button>
 
                   {notifOpen && (
-                    <div className="absolute right-0 mt-3 w-80 overflow-hidden rounded-2xl border border-readora-gold/20 bg-readora-cream p-3 shadow-2xl animate-scale-in">
+                    <div id="navbar-notif-dropdown" className="absolute right-0 top-full mt-2 w-80 overflow-hidden rounded-2xl border border-readora-gold/20 bg-readora-cream p-3 shadow-2xl animate-scale-in">
                       <div className="flex items-center justify-between border-b border-readora-purple/10 px-3 py-2">
                         <span className="text-xs font-bold uppercase tracking-wider text-readora-purple">
                           Notifications

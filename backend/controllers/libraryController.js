@@ -1,6 +1,7 @@
 const LibraryEntry = require("../models/LibraryEntry");
 const Book = require("../models/Book");
 const User = require("../models/User");
+const { emitToUser } = require("../services/socketService");
 
 // Helper to award XP and check streaks
 async function awardUserXP(userId, amount, actionName) {
@@ -303,6 +304,19 @@ const updateLibraryEntry = async (req, res) => {
     if (tags !== undefined) entry.tags = tags;
 
     await entry.save();
+
+    // Emit real-time progress:updated event
+    if (currentPage !== undefined || percentage !== undefined || shelf !== undefined) {
+      emitToUser(userId, "progress:updated", {
+        entryId: entry._id.toString(),
+        bookId: entry.bookId?._id ? entry.bookId._id.toString() : entry.bookId?.toString(),
+        shelf: entry.shelf,
+        currentPage: entry.currentPage,
+        percentage: entry.percentage,
+        updatedAt: entry.updatedAt,
+      });
+    }
+
     res.json(entry);
   } catch (error) {
     res.status(400).json({ message: error.message });

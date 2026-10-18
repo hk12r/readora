@@ -36,35 +36,9 @@ const { seedChallengesIfNeeded } = require("./controllers/challengeController");
 const app = express();
 const server = http.createServer(app);
 
-// Socket.IO Setup with CORS
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-  },
-});
-
-// Real-Time WebSocket Handlers
-io.on("connection", (socket) => {
-  // Join a Buddy Read room
-  socket.on("join_buddy_read", (buddyReadId) => {
-    socket.join(`buddy_${buddyReadId}`);
-  });
-
-  // Broadcast buddy chat messages
-  socket.on("send_buddy_message", (data) => {
-    io.to(`buddy_${data.buddyReadId}`).emit("new_buddy_message", data);
-  });
-
-  // Broadcast reading progress updates to buddy group
-  socket.on("send_buddy_progress", (data) => {
-    io.to(`buddy_${data.buddyReadId}`).emit("update_buddy_progress", data);
-  });
-
-  socket.on("disconnect", () => {
-    // disconnected
-  });
-});
+// Socket.IO Setup with JWT authentication and authorized room handling
+const { initSocketServer } = require("./services/socketService");
+const io = initSocketServer(server);
 
 // Middleware
 app.use(

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useReadora } from "../context/ReadoraContext";
 import api from "../services/api";
-import { io } from "socket.io-client";
 
 function Community() {
-  const { auth, openAuthModal, showToast } = useReadora();
+  const { auth, openAuthModal, showToast, socket } = useReadora();
 
   const [activeTab, setActiveTab] = useState("feed");
   const [feed, setFeed] = useState([]);
@@ -21,7 +20,7 @@ function Community() {
   const [chatPage, setChatPage] = useState("");
   const [isSpoilerChat, setIsSpoilerChat] = useState(false);
   const [unveiledSpoilers, setUnveiledSpoilers] = useState(new Set());
-  const [socket, setSocket] = useState(null);
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
 
   // New Buddy Read Modal
   const [createBuddyModalOpen, setCreateBuddyModalOpen] = useState(false);
@@ -37,26 +36,6 @@ function Community() {
     description: "",
     genre: "Fantasy",
   });
-
-  // Socket.IO connection
-  useEffect(() => {
-    const s = io("http://localhost:5000", { transports: ["websocket", "polling"] });
-    setSocket(s);
-
-    s.on("new_buddy_message", (data) => {
-      setSelectedBuddyRead((prev) => {
-        if (prev && prev._id === data.buddyReadId) {
-          return {
-            ...prev,
-            messages: [...(prev.messages || []), data.message],
-          };
-        }
-        return prev;
-      });
-    });
-
-    return () => s.disconnect();
-  }, []);
 
   // Load feed, buddy reads, clubs, readers
   const loadCommunityData = async () => {
@@ -81,12 +60,79 @@ function Community() {
     loadCommunityData();
   }, [auth.user]);
 
-  // Join Buddy Read room on select
+  // Join Buddy Read room on select & attach real-time listeners
   useEffect(() => {
-    if (selectedBuddyRead && socket) {
-      socket.emit("join_buddy_read", selectedBuddyRead._id);
-    }
-  }, [selectedBuddyRead, socket]);
+    if (!selectedBuddyRead || !socket) return;
+
+    // Join authorized room
+    socket.emit("buddyread:join", { buddyReadId: selectedBuddyRead._id }, (res) => {
+      if (res?.success) {
+        console.log("[Community] Successfully joined buddy room:", res.room);
+      } else if (res?.error) {
+        console.warn("[Community] Could not join buddy room:", res.error);
+      }
+    });
+
+    // 1. Listen for real-time messages
+    const onBuddyMessage = (data) => {
+      if (data?.buddyReadId === selectedBuddyRead._id && data.message) {
+        setSelectedBuddyRead((prev) => {
+          if (!prev || prev._id !== data.buddyReadId) return prev;
+          const exists = (prev.messages || []).some(
+            (m) => m._id && data.message._id && m._id === data.message._id
+          );
+          if (exists) return prev;
+          return {
+            ...prev,
+            messages: [...(prev.messages || []), data.message],
+          };
+        });
+      }
+    };
+
+    // 2. Listen for real-time progress updates
+    const onBuddyProgress = (data) => {
+      if (data?.buddyReadId === selectedBuddyRead._id) {
+        setSelectedBuddyRead((prev) => {
+          if (!prev || prev._id !== data.buddyReadId) return prev;
+          const updatedParticipants = (prev.participants || []).map((p) => {
+            const pId = p.userId?._id ? p.userId._id.toString() : p.userId?.toString();
+            if (pId === data.userId) {
+              return {
+                ...p,
+                currentPage: data.currentPage,
+                percentage: data.percentage,
+              };
+            }
+            return p;
+          });
+          return {
+            ...prev,
+            participants: updatedParticipants,
+            milestones: data.milestones || prev.milestones,
+          };
+        });
+      }
+    };
+
+    // 3. Listen for challenge:milestone in room
+    const onBuddyMilestone = (data) => {
+      if (data?.buddyReadId === selectedBuddyRead._id) {
+        showToast(`🎉 Milestone reached by ${data.userName}: "${data.name}" at page ${data.targetPage}!`, "success");
+      }
+    };
+
+    socket.on("buddyread:message", onBuddyMessage);
+    socket.on("buddyread:progress", onBuddyProgress);
+    socket.on("challenge:milestone", onBuddyMilestone);
+
+    return () => {
+      socket.emit("buddyread:leave", { buddyReadId: selectedBuddyRead._id });
+      socket.off("buddyread:message", onBuddyMessage);
+      socket.off("buddyread:progress", onBuddyProgress);
+      socket.off("challenge:milestone", onBuddyMilestone);
+    };
+  }, [selectedBuddyRead, socket, showToast]);
 
   // Like review in activity feed
   const handleLikeReview = async (reviewId) => {
@@ -149,24 +195,41 @@ function Community() {
     }
   };
 
-  // Post Buddy Message
+  // Post Buddy Message via Socket.IO with REST fallback
   const handleSendBuddyMessage = async (e) => {
     e.preventDefault();
     if (!chatMessage.trim() || !selectedBuddyRead) return;
 
-    try {
-      const msg = await api.postBuddyMessage(selectedBuddyRead._id, {
-        text: chatMessage.trim(),
-        page: parseInt(chatPage) || 0,
-        isSpoiler: isSpoilerChat,
-      });
+    const payload = {
+      buddyReadId: selectedBuddyRead._id,
+      text: chatMessage.trim(),
+      page: parseInt(chatPage) || 0,
+      isSpoiler: isSpoilerChat,
+    };
 
-      if (socket) {
-        socket.emit("send_buddy_message", {
-          buddyReadId: selectedBuddyRead._id,
-          message: msg,
-        });
-      }
+    if (socket && socket.connected) {
+      socket.emit("buddyread:message", payload, (res) => {
+        if (res?.success) {
+          setChatMessage("");
+          setChatPage("");
+          setIsSpoilerChat(false);
+        } else {
+          // If socket fails, fallback to REST
+          fallbackRestMessage(payload);
+        }
+      });
+    } else {
+      fallbackRestMessage(payload);
+    }
+  };
+
+  const fallbackRestMessage = async (payload) => {
+    try {
+      const msg = await api.postBuddyMessage(payload.buddyReadId, {
+        text: payload.text,
+        page: payload.page,
+        isSpoiler: payload.isSpoiler,
+      });
 
       setSelectedBuddyRead((prev) => ({
         ...prev,
@@ -181,10 +244,19 @@ function Community() {
     }
   };
 
-  // Update Buddy Progress
+  // Update Buddy Progress via Socket.IO with REST fallback
   const handleUpdateBuddyProgress = async (buddyId, page) => {
+    const pageNum = parseInt(page) || 0;
+
+    if (socket && socket.connected) {
+      socket.emit("buddyread:progress", {
+        buddyReadId: buddyId,
+        currentPage: pageNum,
+      });
+    }
+
     try {
-      const updated = await api.updateBuddyProgress(buddyId, page);
+      const updated = await api.updateBuddyProgress(buddyId, pageNum);
       setSelectedBuddyRead(updated);
       showToast("Buddy read progress updated! ✦");
     } catch (err) {
@@ -449,7 +521,7 @@ function Community() {
                   ← Back to Buddy Reads list
                 </button>
 
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-readora-purple/10 pb-5">
+                <div id="buddy-read-header-card" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-readora-purple/10 pb-5">
                   <div className="flex items-center gap-4">
                     <img
                       src={selectedBuddyRead.bookId?.cover}
@@ -457,9 +529,15 @@ function Community() {
                       className="h-20 w-14 rounded-lg object-cover shadow"
                     />
                     <div>
-                      <span className="rounded-full bg-readora-gold/20 px-2 py-0.5 text-[10px] font-bold text-readora-purple">
-                        Active Buddy Read
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-readora-gold/20 px-2 py-0.5 text-[10px] font-bold text-readora-purple">
+                          Active Buddy Read
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          Socket.IO Live Sync
+                        </span>
+                      </div>
                       <h2 className="mt-1 font-display text-2xl font-bold text-readora-purple">
                         {selectedBuddyRead.title}
                       </h2>
@@ -493,7 +571,7 @@ function Community() {
                 </div>
 
                 {/* SYNCHRONIZED PARTICIPANTS PROGRESS */}
-                <div className="mt-6">
+                <div id="buddy-participants-progress" className="mt-6 rounded-2xl bg-white p-5 border border-readora-purple/10 shadow-sm">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-readora-purple">
                     Participants Progress
                   </h4>
@@ -521,7 +599,7 @@ function Community() {
                 </div>
 
                 {/* SPOILER-GUARDED CHAT STREAM */}
-                <div className="mt-8 border-t border-readora-purple/10 pt-6">
+                <div id="buddy-chat-section" className="mt-8 border-t border-readora-purple/10 pt-6 rounded-2xl bg-white p-5 border shadow-sm">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-readora-purple mb-4">
                     Buddy Discussion (With Spoiler Shield 🛡️)
                   </h4>

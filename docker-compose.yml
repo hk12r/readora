@@ -1,0 +1,23 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: booktracker-client
+    container_name: readora-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: booktracker-server
+    container_name: readora-backend
+    ports:
+      - "5001:5000"
+    environment:
+      PORT: 5000
+    restart: unless-stopped

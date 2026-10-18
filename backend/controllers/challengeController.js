@@ -1,5 +1,7 @@
 const Challenge = require("../models/Challenge");
 const User = require("../models/User");
+const Notification = require("../models/Notification");
+const { emitToUser } = require("../services/socketService");
 
 // Seed default challenges if none exist
 const defaultChallenges = [
@@ -186,20 +188,47 @@ const updateChallengeProgress = async (req, res) => {
       participant.completed = true;
       // Award badge & XP
       const user = await User.findById(userId);
+      let earnedBadge = null;
       if (user) {
         user.xp = (user.xp || 0) + (challenge.badgeReward?.xp || 200);
         user.level = Math.floor(user.xp / 200) + 1;
         if (challenge.badgeReward) {
-          user.badges.push({
+          earnedBadge = {
             id: `chal_${challenge._id}`,
             name: challenge.badgeReward.name,
             icon: challenge.badgeReward.icon,
             description: `Completed the "${challenge.title}" challenge!`,
             earnedAt: new Date(),
-          });
+          };
+          user.badges.push(earnedBadge);
         }
         await user.save();
       }
+
+      // Real-time challenge:milestone event
+      const milestoneEventData = {
+        challengeId: challenge._id.toString(),
+        title: challenge.title,
+        badge: earnedBadge,
+        xpAwarded: challenge.badgeReward?.xp || 200,
+        userLevel: user?.level || 1,
+        totalXp: user?.xp || 0,
+      };
+
+      emitToUser(userId, "challenge:milestone", milestoneEventData);
+
+      // Create and emit notification:new
+      const notif = await Notification.create({
+        userId,
+        senderId: userId,
+        senderName: "Readora Challenges",
+        type: "milestone",
+        title: "Challenge Completed! 🏆",
+        message: `You completed the "${challenge.title}" challenge and unlocked the ${challenge.badgeReward?.name || "Milestone"} badge!`,
+        link: "/challenges",
+      });
+
+      emitToUser(userId, "notification:new", notif);
     }
 
     await challenge.save();
