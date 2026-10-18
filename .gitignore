@@ -36,3 +36,11 @@ dist-ssr/
 
 # Large scratch and output files
 readora-*.*
+
+# READORA temporary files
+readora-code.txt
+readora-output.md
+readora-output.txt
+
+# Documentation folder
+docs/
