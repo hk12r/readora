@@ -116,25 +116,64 @@ function Analytics() {
           ))}
         </div>
 
-        {/* TAB 1: OVERVIEW & CHARTS */}
+        {/* TAB 1: OVERVIEW & RICH VISUAL CHARTS */}
         {activeTab === "overview" && (
           <div className="mt-8 space-y-8 animate-fade-in">
             {/* STATS BANNER */}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {[
-                { label: "Books Finished", value: analytics?.overview?.totalBooksRead ?? library.shelves.read.length, icon: "📚" },
-                { label: "Pages Explored", value: analytics?.overview?.totalPagesRead ?? 2450, icon: "📄" },
-                { label: "Avg Rating", value: `★ ${analytics?.overview?.averageRating ?? 4.4}`, icon: "⭐" },
-                { label: "Reading Pace", value: `${analytics?.overview?.readingPacePerHour ?? 42} p/hr`, icon: "⚡" },
-                { label: "Current Streak", value: `${analytics?.overview?.currentStreak ?? 5} days`, icon: "🔥" },
-                { label: "Longest Streak", value: `${analytics?.overview?.longestStreak ?? 14} days`, icon: "🏆" },
+                {
+                  label: "Books Finished",
+                  value: analytics?.overview?.totalBooksRead ?? library.shelves.read.length,
+                  icon: "📚",
+                  color: "text-readora-purple",
+                },
+                {
+                  label: "Pages Explored",
+                  value:
+                    analytics?.overview?.totalPagesRead ??
+                    library.shelves.read.reduce((s, e) => s + (e.bookId?.pages || 0), 0),
+                  icon: "📄",
+                  color: "text-amber-800",
+                },
+                {
+                  label: "Avg Rating",
+                  value: analytics?.overview?.averageRating
+                    ? `★ ${analytics.overview.averageRating}`
+                    : library.shelves.read.length
+                    ? "★ 4.5"
+                    : "★ 0.0",
+                  icon: "⭐",
+                  color: "text-readora-gold",
+                },
+                {
+                  label: "Reading Pace",
+                  value: `${
+                    analytics?.overview?.readingPacePerHour ||
+                    (analytics?.overview?.totalPagesRead ? 38 : 0)
+                  } p/hr`,
+                  icon: "⚡",
+                  color: "text-emerald-700",
+                },
+                {
+                  label: "Current Streak",
+                  value: `${auth.user?.streak?.current || analytics?.overview?.currentStreak || 1}d`,
+                  icon: "🔥",
+                  color: "text-orange-600",
+                },
+                {
+                  label: "Longest Streak",
+                  value: `${auth.user?.streak?.longest || analytics?.overview?.longestStreak || 1}d`,
+                  icon: "🏆",
+                  color: "text-indigo-700",
+                },
               ].map((stat) => (
                 <div
                   key={stat.label}
-                  className="rounded-2xl border border-readora-purple/10 bg-white/80 p-4 shadow-sm"
+                  className="rounded-2xl border border-readora-purple/10 bg-white/85 p-4 shadow-sm transition hover:border-readora-gold"
                 >
                   <span className="text-xl">{stat.icon}</span>
-                  <p className="mt-2 font-display text-2xl font-bold text-readora-purple">
+                  <p className={`mt-2 font-display text-2xl font-bold ${stat.color}`}>
                     {stat.value}
                   </p>
                   <p className="text-[11px] font-semibold text-readora-brown/65">{stat.label}</p>
@@ -142,114 +181,413 @@ function Analytics() {
               ))}
             </div>
 
-            {/* MONTHLY ACTIVITY BAR CHART */}
-            <div className="rounded-3xl border border-readora-purple/10 bg-white/80 p-7 shadow-sm">
-              <h2 className="font-display text-xl font-bold text-readora-purple">
-                Monthly Reading Velocity
-              </h2>
-              <p className="text-xs text-readora-brown/65">
-                Books and pages logged over the last 6 months
-              </p>
+            {/* CHART 1: MONTHLY READING VELOCITY (DUAL-METRIC BAR & HEIGHT CHART) */}
+            <div className="rounded-3xl border border-readora-purple/10 bg-white/85 p-7 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-readora-purple/10 pb-4">
+                <div>
+                  <h2 className="font-display text-xl font-bold text-readora-purple">
+                    Monthly Reading Velocity & Volume
+                  </h2>
+                  <p className="text-xs text-readora-brown/65">
+                    Pages logged (bar height) and books completed (badge) across recent months
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] font-bold">
+                  <span className="flex items-center gap-1.5 text-readora-purple">
+                    <span className="h-3 w-3 rounded-sm bg-gradient-to-t from-readora-purple to-readora-royal"></span>
+                    Pages Read
+                  </span>
+                  <span className="flex items-center gap-1.5 text-amber-700">
+                    <span className="h-3 w-3 rounded-full bg-readora-gold"></span>
+                    Books Finished
+                  </span>
+                </div>
+              </div>
 
-              <div className="mt-8 flex h-48 items-end gap-3 sm:gap-6 border-b border-readora-purple/15 pb-2">
-                {(analytics?.monthlyData || [
-                  { month: "May", books: 2, pages: 640 },
-                  { month: "Jun", books: 3, pages: 980 },
-                  { month: "Jul", books: 1, pages: 350 },
-                  { month: "Aug", books: 4, pages: 1250 },
-                  { month: "Sep", books: 3, pages: 890 },
-                  { month: "Oct", books: 5, pages: 1540 },
-                ]).map((m) => {
-                  const maxPages = 1800;
-                  const heightPercent = Math.min(100, Math.round((m.pages / maxPages) * 100));
+              {/* BAR CHART CANVAS */}
+              <div className="mt-8">
+                {(() => {
+                  const monthlyList =
+                    analytics?.monthlyData && analytics.monthlyData.length > 0
+                      ? analytics.monthlyData
+                      : [
+                          { month: "May", books: 1, pages: 320 },
+                          { month: "Jun", books: 2, pages: 680 },
+                          { month: "Jul", books: 1, pages: 410 },
+                          { month: "Aug", books: 3, pages: 950 },
+                          { month: "Sep", books: 2, pages: 580 },
+                          { month: "Oct", books: 4, pages: 1240 },
+                        ];
+
+                  const maxPages = Math.max(...monthlyList.map((m) => m.pages || 0), 1000);
 
                   return (
-                    <div key={m.month} className="flex flex-1 flex-col items-center gap-2">
-                      <span className="text-[10px] font-bold text-readora-purple">{m.pages}p</span>
-                      <div className="w-full max-w-[48px] rounded-t-xl bg-readora-purple/15 h-36 flex items-end overflow-hidden">
-                        <div
-                          className="w-full rounded-t-xl bg-gradient-to-t from-readora-purple to-readora-royal transition-all duration-500"
-                          style={{ height: `${heightPercent}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-bold text-readora-brown">{m.month}</span>
-                      <span className="text-[10px] text-readora-gold font-semibold">
-                        {m.books} {m.books === 1 ? "book" : "books"}
-                      </span>
+                    <div className="flex h-56 items-end gap-3 sm:gap-6 border-b border-readora-purple/20 pb-3">
+                      {monthlyList.map((m) => {
+                        const heightPct = Math.max(8, Math.min(100, Math.round(((m.pages || 0) / maxPages) * 100)));
+
+                        return (
+                          <div key={m.month} className="group relative flex flex-1 flex-col items-center gap-2">
+                            {/* HOVER TOOLTIP */}
+                            <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition duration-200 pointer-events-none rounded-lg bg-readora-plum px-2 py-1 text-[10px] font-bold text-white shadow-md z-10 whitespace-nowrap">
+                              {m.pages || 0} pages • {m.books || 0} books
+                            </div>
+
+                            <span className="text-[10px] font-bold text-readora-purple">
+                              {m.pages || 0}p
+                            </span>
+
+                            {/* DUAL METRIC BAR */}
+                            <div className="w-full max-w-[52px] rounded-t-2xl bg-readora-purple/10 h-40 flex flex-col justify-end overflow-hidden p-1">
+                              <div
+                                className="w-full rounded-t-xl bg-gradient-to-t from-readora-purple via-readora-royal to-readora-gold shadow-xs transition-all duration-700 relative"
+                                style={{ height: `${heightPct}%` }}
+                              >
+                                {m.books > 0 && (
+                                  <div className="absolute top-1 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-readora-gold text-readora-purple text-[9px] font-bold flex items-center justify-center shadow-xs">
+                                    {m.books}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <span className="text-xs font-bold text-readora-brown">{m.month}</span>
+                            <span className="text-[10px] text-readora-gold font-bold">
+                              {m.books} {m.books === 1 ? "book" : "books"}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
-                })}
+                })()}
               </div>
             </div>
 
-            {/* TWO COLUMN GRID: GENRES & RATINGS */}
+            {/* TWO COLUMN GRID: CHART 2 (DONUT GENRE PALETTE) & CHART 3 (SPEEDOMETER & MOODS) */}
             <div className="grid gap-8 lg:grid-cols-2">
-              {/* GENRE DISTRIBUTION */}
-              <div className="rounded-3xl border border-readora-purple/10 bg-white/80 p-7 shadow-sm">
-                <h3 className="font-display text-lg font-bold text-readora-purple">
-                  Genre Distribution
-                </h3>
-                <p className="text-xs text-readora-brown/65">Your literary palette</p>
+              {/* CHART 2: SVG DONUT CHART FOR GENRE DISTRIBUTION */}
+              <div className="rounded-3xl border border-readora-purple/10 bg-white/85 p-7 shadow-sm">
+                <div className="flex items-center justify-between border-b border-readora-purple/10 pb-3">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-readora-purple">
+                      Genre Distribution (Palette Donut)
+                    </h3>
+                    <p className="text-xs text-readora-brown/65">Visual proportion of your literary realms</p>
+                  </div>
+                  <span className="text-xs font-bold text-readora-gold">🍩 Donut Chart</span>
+                </div>
 
-                <div className="mt-5 space-y-3">
-                  {Object.entries(
-                    analytics?.genreDistribution || {
-                      Fantasy: 6,
-                      "Literary Fiction": 4,
-                      Mystery: 3,
-                      Romance: 2,
-                      "Science Fiction": 2,
-                    }
-                  ).map(([genre, count]) => (
-                    <div key={genre}>
-                      <div className="flex justify-between text-xs font-semibold text-readora-purple">
-                        <span>{genre}</span>
-                        <span>{count} books</span>
+                {(() => {
+                  const defaultGenres = {
+                    Fantasy: 5,
+                    Fiction: 3,
+                    "Sci-Fi": 2,
+                    Mystery: 2,
+                    Romance: 1,
+                  };
+                  const rawGenres =
+                    analytics?.genreDistribution && Object.keys(analytics.genreDistribution).length > 0
+                      ? analytics.genreDistribution
+                      : defaultGenres;
+
+                  const genreEntries = Object.entries(rawGenres);
+                  const totalCount = genreEntries.reduce((sum, [, count]) => sum + count, 0) || 1;
+                  const paletteColors = [
+                    "#6A0DAD", // Royal Purple
+                    "#D4AF37", // Antique Gold
+                    "#9D4EDD", // Lavender
+                    "#EC4899", // Pink Plum
+                    "#10B981", // Emerald
+                    "#3B82F6", // Sky Blue
+                    "#F59E0B", // Amber
+                  ];
+
+                  // Calculate SVG stroke dashes for donut (circumference for r=50 is ~314.16)
+                  const radius = 50;
+                  const circ = 2 * Math.PI * radius;
+                  let accumulatedPct = 0;
+
+                  return (
+                    <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
+                      {/* SVG DONUT CHART */}
+                      <div className="relative flex items-center justify-center shrink-0">
+                        <svg className="w-44 h-44 -rotate-90" viewBox="0 0 120 120">
+                          {/* Background Track */}
+                          <circle
+                            cx="60"
+                            cy="60"
+                            r={radius}
+                            fill="transparent"
+                            stroke="#f3e8ff"
+                            strokeWidth="16"
+                          />
+                          {/* Slices */}
+                          {genreEntries.map(([genre, count], idx) => {
+                            const pct = count / totalCount;
+                            const strokeDash = pct * circ;
+                            const strokeOffset = -accumulatedPct * circ;
+                            accumulatedPct += pct;
+                            const color = paletteColors[idx % paletteColors.length];
+
+                            return (
+                              <circle
+                                key={genre}
+                                cx="60"
+                                cy="60"
+                                r={radius}
+                                fill="transparent"
+                                stroke={color}
+                                strokeWidth="16"
+                                strokeDasharray={`${strokeDash} ${circ}`}
+                                strokeDashoffset={strokeOffset}
+                                className="transition-all duration-700 hover:opacity-85"
+                              />
+                            );
+                          })}
+                        </svg>
+
+                        {/* CENTER LABEL */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                          <span className="text-[10px] uppercase font-bold text-readora-brown/60 tracking-wider">
+                            Total
+                          </span>
+                          <span className="font-display text-xl font-bold text-readora-purple">
+                            {totalCount}
+                          </span>
+                          <span className="text-[9px] text-readora-gold font-semibold">Books</span>
+                        </div>
                       </div>
-                      <div className="mt-1 h-2 w-full rounded-full bg-readora-purple/10 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-readora-gold"
-                          style={{ width: `${Math.min(100, count * 15)}%` }}
-                        />
+
+                      {/* LEGEND PILLS */}
+                      <div className="flex-1 w-full space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {genreEntries.map(([genre, count], idx) => {
+                          const pct = Math.round((count / totalCount) * 100);
+                          const color = paletteColors[idx % paletteColors.length];
+
+                          return (
+                            <div
+                              key={genre}
+                              className="flex items-center justify-between text-xs rounded-xl p-2 bg-readora-cream/40 border border-readora-purple/5 hover:bg-readora-cream transition"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="h-3 w-3 rounded-full shrink-0"
+                                  style={{ backgroundColor: color }}
+                                />
+                                <span className="font-bold text-readora-purple truncate max-w-[120px]">
+                                  {genre}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-readora-brown/70">{count} bks</span>
+                                <span
+                                  className="rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-xs"
+                                  style={{ backgroundColor: color }}
+                                >
+                                  {pct}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  ))}
+                  );
+                })()}
+              </div>
+
+              {/* CHART 3: READING PACE SPEEDOMETER & MOOD RADAR */}
+              <div className="rounded-3xl border border-readora-purple/10 bg-white/85 p-7 shadow-sm">
+                <div className="flex items-center justify-between border-b border-readora-purple/10 pb-3">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-readora-purple">
+                      Pacing Gauge & Reading Moods
+                    </h3>
+                    <p className="text-xs text-readora-brown/65">Velocity speed and atmospheric inclinations</p>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-700">⚡ Velocity Meter</span>
+                </div>
+
+                {/* SPEEDOMETER GAUGE */}
+                <div className="mt-5 rounded-2xl bg-gradient-to-br from-readora-purple/5 to-readora-gold/10 p-4 border border-readora-purple/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-readora-brown/60 tracking-wider">
+                      Current Velocity Speed
+                    </span>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="font-display text-3xl font-bold text-readora-purple">
+                        {analytics?.overview?.readingPacePerHour || 42}
+                      </span>
+                      <span className="text-xs font-bold text-readora-gold">pages / hour</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-readora-brown/80 font-medium">
+                      {(analytics?.overview?.readingPacePerHour || 42) > 40
+                        ? "⚡ Binge Sprinter Pace — Absorbing twists swiftly"
+                        : "☕ Contemplative Pace — Savoring prose and rich world details"}
+                    </p>
+                  </div>
+
+                  {/* MINI SPEEDOMETER ARCH */}
+                  <div className="h-16 w-24 shrink-0 flex flex-col items-center justify-center rounded-2xl bg-white p-2 border border-readora-purple/10 shadow-xs">
+                    <span className="text-2xl">🧭</span>
+                    <span className="text-[9px] font-bold text-emerald-700 uppercase">Active Pace</span>
+                  </div>
+                </div>
+
+                {/* MOOD DISTRIBUTION PILLS */}
+                <div className="mt-5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-readora-purple mb-2">
+                    Atmospheric Reading Moods:
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    {[
+                      { mood: "Thoughtful & Reflective", pct: 38, icon: "🌌", color: "bg-indigo-600" },
+                      { mood: "Adventurous & Epic", pct: 28, icon: "⚔️", color: "bg-amber-600" },
+                      { mood: "Cozy & Whimsical", pct: 18, icon: "☕", color: "bg-emerald-600" },
+                      { mood: "Dark & Psychological", pct: 16, icon: "🕯️", color: "bg-purple-700" },
+                    ].map((m) => (
+                      <div key={m.mood}>
+                        <div className="flex justify-between font-semibold text-readora-purple text-[11px]">
+                          <span className="flex items-center gap-1.5">
+                            <span>{m.icon}</span> {m.mood}
+                          </span>
+                          <span>{m.pct}%</span>
+                        </div>
+                        <div className="mt-1 h-2 w-full rounded-full bg-readora-purple/10 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${m.color} transition-all duration-500`}
+                            style={{ width: `${m.pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* TWO COLUMN GRID: CHART 4 (RATING HISTOGRAM) & CHART 5 (FICTION RATIO & DIVERSITY) */}
+            <div className="grid gap-8 lg:grid-cols-2">
+              {/* CHART 4: RATING DISTRIBUTION HISTOGRAM */}
+              <div className="rounded-3xl border border-readora-purple/10 bg-white/85 p-7 shadow-sm">
+                <div className="flex items-center justify-between border-b border-readora-purple/10 pb-3">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-readora-purple">
+                      Rating Distribution (Star Histogram)
+                    </h3>
+                    <p className="text-xs text-readora-brown/65">How you score the stories you explore</p>
+                  </div>
+                  <span className="text-xs font-bold text-readora-gold">★ Ratings</span>
+                </div>
+
+                {(() => {
+                  const ratingMap = analytics?.ratingDistribution || { 5: 3, 4: 2, 3: 1, 2: 0, 1: 0 };
+                  const totalRatings = Object.values(ratingMap).reduce((s, v) => s + v, 0) || 1;
+
+                  return (
+                    <div className="mt-5 space-y-3">
+                      {[5, 4, 3, 2, 1].map((stars) => {
+                        const count = ratingMap[stars] || 0;
+                        const pct = Math.round((count / totalRatings) * 100);
+
+                        return (
+                          <div key={stars} className="flex items-center gap-3 text-xs">
+                            <span className="w-14 font-bold text-readora-gold flex items-center gap-1">
+                              <span>★</span> {stars}.0
+                            </span>
+                            <div className="h-3 flex-1 rounded-full bg-readora-purple/10 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-readora-purple to-readora-gold transition-all duration-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="w-14 text-right font-bold text-readora-purple text-[11px]">
+                              {count} ({pct}%)
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                <div className="mt-6 border-t border-readora-purple/10 pt-4 flex justify-between items-center text-xs font-bold text-readora-purple">
+                  <span>Critique Persona:</span>
+                  <span className="text-readora-gold">
+                    {(analytics?.overview?.averageRating || 4.2) >= 4.0
+                      ? "Generous & Enthusiastic Reader ✦"
+                      : "Thoughtful & Discerning Critic ✦"}
+                  </span>
                 </div>
               </div>
 
-              {/* RATING BREAKDOWN & FICTION RATIO */}
-              <div className="rounded-3xl border border-readora-purple/10 bg-white/80 p-7 shadow-sm">
-                <h3 className="font-display text-lg font-bold text-readora-purple">
-                  Rating Distribution
-                </h3>
-                <p className="text-xs text-readora-brown/65">How critically you rate stories</p>
-
-                <div className="mt-5 space-y-2.5">
-                  {[5, 4, 3, 2, 1].map((stars) => {
-                    const count = analytics?.ratingDistribution?.[stars] ?? (stars >= 4 ? 4 : 1);
-                    return (
-                      <div key={stars} className="flex items-center gap-3 text-xs">
-                        <span className="w-12 font-bold text-readora-gold">★ {stars}</span>
-                        <div className="h-2 flex-1 rounded-full bg-readora-purple/10 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-readora-purple"
-                            style={{ width: `${Math.min(100, count * 20)}%` }}
-                          />
-                        </div>
-                        <span className="w-6 text-right font-semibold text-readora-brown">
-                          {count}
-                        </span>
-                      </div>
-                    );
-                  })}
+              {/* CHART 5: FICTION VS NON-FICTION & AUTHOR DIVERSITY */}
+              <div className="rounded-3xl border border-readora-purple/10 bg-white/85 p-7 shadow-sm">
+                <div className="flex items-center justify-between border-b border-readora-purple/10 pb-3">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-readora-purple">
+                      Fiction Split & Author Diversity
+                    </h3>
+                    <p className="text-xs text-readora-brown/65">Balance of imaginative and factual literature</p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-700">📖 Literature Ratio</span>
                 </div>
 
-                <div className="mt-6 border-t border-readora-purple/10 pt-4 flex justify-between items-center text-xs font-bold text-readora-purple">
-                  <span>Fiction vs Nonfiction:</span>
-                  <span className="text-readora-gold">
-                    {analytics?.fictionVsNonfiction?.fiction ?? 85}% Fiction •{" "}
-                    {analytics?.fictionVsNonfiction?.nonfiction ?? 15}% Nonfiction
+                {/* SEGMENTED DUAL-TONE BAR */}
+                <div className="mt-5">
+                  <div className="flex justify-between text-xs font-bold text-readora-purple mb-1.5">
+                    <span>Fiction ({analytics?.fictionVsNonfiction?.fiction || 4} bks)</span>
+                    <span>Non-Fiction ({analytics?.fictionVsNonfiction?.nonfiction || 1} bks)</span>
+                  </div>
+                  {(() => {
+                    const fCount = analytics?.fictionVsNonfiction?.fiction || 4;
+                    const nfCount = analytics?.fictionVsNonfiction?.nonfiction || 1;
+                    const totalFN = fCount + nfCount || 1;
+                    const fPct = Math.round((fCount / totalFN) * 100);
+                    const nfPct = 100 - fPct;
+
+                    return (
+                      <div className="h-4 w-full rounded-full overflow-hidden flex shadow-xs border border-readora-purple/15">
+                        <div
+                          className="h-full bg-readora-purple flex items-center justify-center text-[9px] font-bold text-white transition-all duration-500"
+                          style={{ width: `${fPct}%` }}
+                        >
+                          {fPct > 15 ? `${fPct}%` : ""}
+                        </div>
+                        <div
+                          className="h-full bg-readora-gold flex items-center justify-center text-[9px] font-bold text-readora-purple transition-all duration-500"
+                          style={{ width: `${nfPct}%` }}
+                        >
+                          {nfPct > 15 ? `${nfPct}%` : ""}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* TOP AUTHORS CHIPS */}
+                <div className="mt-6 border-t border-readora-purple/10 pt-4">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-readora-purple">
+                    Most Explored Storytellers:
                   </span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(analytics?.authorDiversity?.topAuthors && analytics.authorDiversity.topAuthors.length > 0
+                      ? analytics.authorDiversity.topAuthors
+                      : [
+                          { author: "Brandon Sanderson", count: 2 },
+                          { author: "Emily Henry", count: 2 },
+                          { author: "Andy Weir", count: 1 },
+                        ]
+                    ).map((a) => (
+                      <span
+                        key={a.author}
+                        className="rounded-full bg-readora-cream border border-readora-purple/15 px-3 py-1 text-xs font-bold text-readora-purple shadow-xs"
+                      >
+                        ✍️ {a.author} ({a.count})
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

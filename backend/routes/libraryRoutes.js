@@ -19,7 +19,7 @@ router.get("/", protect, getLibrary);
 // POST - Add book to library
 router.post("/", protect, addToLibrary);
 
-// POST - Import CSV / Goodreads / StoryGraph / Fable
+// POST - Import CSV / Goodreads / Fable
 router.post("/import", protect, importLibrary);
 
 // GET - Export user library

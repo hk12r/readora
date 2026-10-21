@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { Routes, Route } from "react-router-dom";
 
+import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import AuthPromptModal from "./components/AuthPromptModal";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 import Home from "./pages/Home";
 import Discover from "./pages/Discover";
@@ -12,7 +14,6 @@ import ReadingJournal from "./pages/ReadingJournal";
 import Analytics from "./pages/Analytics";
 import ChallengesGoals from "./pages/ChallengesGoals";
 import Community from "./pages/Community";
-import SmartNotes from "./pages/SmartNotes";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
 import About from "./pages/About";
@@ -21,28 +22,89 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 
 function App() {
-  return (
-    <div className="min-h-screen bg-readora-cream flex flex-col justify-between">
-      <Navbar />
+  // Right-side drawer open/close state (hidden by default)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-      <div className="flex-1">
+  return (
+    <div className="min-h-screen bg-readora-cream text-readora-brown flex flex-col justify-between">
+      {/* RIGHT-SIDE SLIDEOUT SIDEBAR (OPENS ON DEMAND VIA MENU BUTTON) */}
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* TOP HEADER */}
+      <Navbar onOpenSidebar={() => setSidebarOpen(true)} />
+
+      {/* MAIN APPLICATION CONTENT (FULL WIDTH, UNCLUTTERED) */}
+      <main className="flex-1 w-full">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/discover" element={<Discover />} />
-          <Route path="/library" element={<Library />} />
-          <Route path="/journal" element={<ReadingJournal />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/challenges" element={<ChallengesGoals />} />
-          <Route path="/community" element={<Community />} />
-          <Route path="/notes" element={<SmartNotes />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/profile" element={<Profile />} />
+
+          {/* PROTECTED ROUTES - ONLY VISIBLE AFTER LOGIN / REGISTRATION */}
+          <Route
+            path="/community"
+            element={
+              <ProtectedRoute>
+                <Community />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/library"
+            element={
+              <ProtectedRoute>
+                <Library />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/journal"
+            element={
+              <ProtectedRoute>
+                <ReadingJournal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/challenges"
+            element={
+              <ProtectedRoute>
+                <ChallengesGoals />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute role="admin">
+                <Admin />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* INFORMATIONAL & AUTH PAGES */}
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
         </Routes>
-      </div>
+      </main>
 
       <Footer />
       <AuthPromptModal />

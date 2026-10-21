@@ -35,7 +35,7 @@ function Library() {
 
   // Import / Export state
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importSource, setImportSource] = useState("storygraph");
+  const [importSource, setImportSource] = useState("goodreads");
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
 
@@ -96,7 +96,7 @@ function Library() {
     setEditingProgressId(null);
   };
 
-  // Handle CSV / StoryGraph / Goodreads file upload parser
+  // Handle CSV / Goodreads file upload parser
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -234,14 +234,14 @@ function Library() {
             <button
               onClick={() => {
                 if (!auth.user) {
-                  openAuthModal({ message: "Sign in to import your library from StoryGraph or Goodreads." });
+                  openAuthModal({ message: "Sign in to import your library from Goodreads or CSV." });
                   return;
                 }
                 setImportModalOpen(true);
               }}
               className="flex items-center gap-2 rounded-full border border-readora-purple/20 bg-white/80 px-4 py-2.5 text-xs font-bold text-readora-purple shadow-sm transition hover:border-readora-gold hover:bg-readora-lavenderLight"
             >
-              <span>📥</span> Import from StoryGraph / Goodreads
+              <span>📥</span> Import from Goodreads / CSV
             </button>
 
             <button
@@ -583,8 +583,7 @@ function Library() {
               </button>
             </div>
             <p className="mt-1 text-xs text-readora-brown/75">
-              Seamlessly migrate all your shelves, ratings, dates, and reviews from StoryGraph,
-              Goodreads, Fable, or standard CSV files.
+              Seamlessly migrate all your shelves, ratings, dates, and reviews from Goodreads, Fable, or standard CSV files.
             </p>
 
             <div className="mt-5 space-y-4">
@@ -592,8 +591,8 @@ function Library() {
                 <label className="text-xs font-bold text-readora-purple block mb-1">
                   Select Format / Source
                 </label>
-                <div className="grid grid-cols-4 gap-2 text-xs font-bold">
-                  {["storygraph", "goodreads", "fable", "csv"].map((src) => (
+                <div className="grid grid-cols-3 gap-2 text-xs font-bold">
+                  {["goodreads", "fable", "csv"].map((src) => (
                     <button
                       key={src}
                       type="button"

@@ -2,11 +2,11 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/verify_experiment8.cjs"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +23,7 @@
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.5",
+    "nodemailer": "^10.1.7",
     "socket.io": "^4.8.4"
   }
 }

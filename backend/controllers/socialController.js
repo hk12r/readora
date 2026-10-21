@@ -1,34 +1,128 @@
+const mongoose = require("mongoose");
 const BuddyRead = require("../models/BuddyRead");
 const BookClub = require("../models/BookClub");
 const User = require("../models/User");
+const Book = require("../models/Book");
 const Notification = require("../models/Notification");
 const LibraryEntry = require("../models/LibraryEntry");
 const { emitToUser, emitToBuddyRead } = require("../services/socketService");
+const {
+  notifyBuddyMessage,
+  notifyBuddyProgress,
+  notifyMilestoneUnlocked,
+  notifyNewFollower,
+} = require("../services/emailService");
 
 // ================= BUDDY READS =================
 const createBuddyRead = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { bookId, title, targetFinishDate, milestones = [] } = req.body;
+    const { bookId, title, targetFinishDate, milestones = [], partnerId } = req.body;
+
+    // Safely resolve book from MongoDB or by ISBN/title
+    let book = null;
+    if (bookId && mongoose.Types.ObjectId.isValid(bookId)) {
+      book = await Book.findById(bookId);
+    }
+    if (!book && bookId) {
+      book = await Book.findOne({ $or: [{ isbn: bookId }, { title: bookId }] });
+    }
+    if (!book) {
+      book = await Book.findOne();
+    }
+
+    const resolvedBookId = book ? book._id : (mongoose.Types.ObjectId.isValid(bookId) ? bookId : undefined);
+    const totalPages = book?.pages || 300;
+
+    // Build 4-checkpoint reading milestones if not specified
+    const defaultMilestones = [
+      { name: "25% Quarter Checkpoint", targetPage: Math.max(1, Math.round(totalPages * 0.25)), completedBy: [] },
+      { name: "50% Halfway Checkpoint", targetPage: Math.max(2, Math.round(totalPages * 0.5)), completedBy: [] },
+      { name: "75% Three-Quarter Checkpoint", targetPage: Math.max(3, Math.round(totalPages * 0.75)), completedBy: [] },
+      { name: "100% Reading Complete", targetPage: totalPages, completedBy: [] },
+    ];
+
+    // Safely resolve reading partner (mandatory for Buddy Reads)
+    let partnerUser = null;
+    if (partnerId) {
+      if (mongoose.Types.ObjectId.isValid(partnerId)) {
+        partnerUser = await User.findById(partnerId);
+      } else if (typeof partnerId === "string" && partnerId.includes("@")) {
+        partnerUser = await User.findOne({ email: partnerId.toLowerCase().trim() });
+        if (!partnerUser) {
+          partnerUser = await User.create({
+            name: partnerId.split("@")[0],
+            email: partnerId.toLowerCase().trim(),
+            bio: "Invited reading companion",
+          });
+        }
+      }
+    }
+
+    // If still no partner, pair with an active community reader
+    if (!partnerUser) {
+      partnerUser = await User.findOne({ _id: { $ne: userId } });
+    }
+
+    const participants = [{ userId, currentPage: 0, percentage: 0 }];
+    if (partnerUser && partnerUser._id.toString() !== userId.toString()) {
+      participants.push({ userId: partnerUser._id, currentPage: 0, percentage: 0 });
+    }
 
     const buddyRead = new BuddyRead({
-      bookId,
+      bookId: resolvedBookId,
       creatorId: userId,
-      title,
+      title: title || (book ? `${book.title} Buddy Read` : "Buddy Read"),
       targetFinishDate,
-      participants: [{ userId, currentPage: 0, percentage: 0 }],
-      milestones: milestones.length
-        ? milestones
-        : [
-            { name: "First Quarter Checkpoint", targetPage: 75, completedBy: [] },
-            { name: "Halfway Checkpoint", targetPage: 150, completedBy: [] },
-            { name: "Final Stretch", targetPage: 250, completedBy: [] },
-          ],
+      participants,
+      milestones: milestones.length ? milestones : defaultMilestones,
     });
 
     await buddyRead.save();
-    await buddyRead.populate("bookId", "title author cover pages");
-    await buddyRead.populate("creatorId", "name avatar");
+    if (resolvedBookId) {
+      await buddyRead.populate("bookId", "title author cover pages genre");
+    }
+    await buddyRead.populate("creatorId", "name avatar email");
+    await buddyRead.populate("participants.userId", "name avatar email");
+
+    // If a partner was invited, dispatch live websocket notification + registered email notification
+    if (partnerUser && partnerUser._id.toString() !== userId.toString()) {
+      const notif = await Notification.create({
+        userId: partnerUser._id,
+        senderId: userId,
+        senderName: req.user.name || "Reader",
+        type: "buddy_read",
+        title: "Buddy Read Invitation! ✦",
+        message: `${req.user.name || "A friend"} invited you to read "${buddyRead.bookId?.title || buddyRead.title}" together!`,
+        link: "/community",
+      });
+
+      const notifData = {
+        _id: notif._id.toString(),
+        userId: notif.userId.toString(),
+        senderId: notif.senderId?.toString(),
+        senderName: notif.senderName,
+        type: notif.type,
+        title: notif.title,
+        message: notif.message,
+        link: notif.link,
+        createdAt: notif.createdAt || new Date(),
+      };
+      emitToUser(partnerUser._id, "notification:new", notifData);
+      emitToUser(partnerUser._id, "buddyread:invite", buddyRead);
+
+      if (partnerUser.email) {
+        notifyBuddyMessage({
+          recipientEmail: partnerUser.email,
+          recipientName: partnerUser.name,
+          senderName: req.user.name || "A friend",
+          buddyTitle: buddyRead.title,
+          bookTitle: buddyRead.bookId?.title,
+          messageText: `Hey! I started a new Buddy Read for "${buddyRead.bookId?.title || buddyRead.title}". Let's read together and discuss as we go!`,
+          page: 0,
+        }).catch((err) => console.warn("[Email dispatch error]:", err.message));
+      }
+    }
 
     res.status(201).json(buddyRead);
   } catch (error) {
@@ -38,12 +132,16 @@ const createBuddyRead = async (req, res) => {
 
 const getBuddyReads = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const buddyReads = await BuddyRead.find({
-      $or: [{ creatorId: userId }, { "participants.userId": userId }],
-    })
-      .populate("bookId", "title author cover pages")
-      .populate("participants.userId", "name avatar")
+    const userId = req.user ? req.user._id : null;
+    let query = {};
+    if (req.query.scope === "mine" && userId) {
+      query = { $or: [{ creatorId: userId }, { "participants.userId": userId }] };
+    }
+
+    const buddyReads = await BuddyRead.find(query)
+      .populate("bookId", "title author cover pages genre")
+      .populate("participants.userId", "name avatar email")
+      .populate("creatorId", "name avatar email")
       .sort({ updatedAt: -1 });
 
     res.json(buddyReads);
@@ -85,19 +183,34 @@ const joinBuddyRead = async (req, res) => {
 
       // Notify creator
       if (buddyRead.creatorId.toString() !== userId.toString()) {
-        await Notification.create({
+        const notif = await Notification.create({
           userId: buddyRead.creatorId,
           senderId: userId,
-          senderName: req.user.name,
+          senderName: req.user.name || "Reader",
           type: "buddy_read",
-          title: "Buddy Read Joined",
-          message: `${req.user.name} joined your buddy read of "${buddyRead.title}"!`,
+          title: "Buddy Read Joined! ✦",
+          message: `${req.user.name || "A reader"} joined your buddy read of "${buddyRead.title}"!`,
+          link: "/community",
         });
+        emitToUser(buddyRead.creatorId, "notification:new", notif);
+
+        const creatorUser = await User.findById(buddyRead.creatorId);
+        if (creatorUser && creatorUser.email) {
+          notifyBuddyMessage({
+            recipientEmail: creatorUser.email,
+            recipientName: creatorUser.name,
+            senderName: req.user.name || "A reader",
+            buddyTitle: buddyRead.title,
+            bookTitle: buddyRead.bookId?.title,
+            messageText: `${req.user.name || "A reader"} joined your Buddy Read room and is ready to read together!`,
+            page: 0,
+          }).catch((err) => console.warn("[Email dispatch error]:", err.message));
+        }
       }
     }
 
-    await buddyRead.populate("bookId", "title author cover pages");
-    await buddyRead.populate("participants.userId", "name avatar");
+    await buddyRead.populate("bookId", "title author cover pages genre");
+    await buddyRead.populate("participants.userId", "name avatar email");
     res.json(buddyRead);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -141,6 +254,31 @@ const updateBuddyProgress = async (req, res) => {
         milestones: buddyRead.milestones,
       });
 
+      // Notify other participants via Email and In-App
+      const otherParticipantIds = [
+        ...new Set(
+          [buddyRead.creatorId, ...buddyRead.participants.map((p) => p.userId)]
+            .filter((id) => id && id.toString() !== userId.toString())
+            .map((id) => id.toString())
+        ),
+      ];
+
+      for (const targetId of otherParticipantIds) {
+        const targetUser = await User.findById(targetId);
+        if (targetUser && targetUser.email) {
+          notifyBuddyProgress({
+            recipientEmail: targetUser.email,
+            recipientName: targetUser.name,
+            partnerName: req.user.name || "Your reading partner",
+            buddyTitle: buddyRead.title,
+            bookTitle: buddyRead.bookId?.title || buddyRead.title,
+            currentPage: participant.currentPage,
+            percentage: participant.percentage,
+            totalPages: total,
+          }).catch((err) => console.warn("[Email dispatch error]:", err.message));
+        }
+      }
+
       // Emit challenge:milestone and notification if milestones reached
       for (const m of newlyCompletedMilestones) {
         const milestoneData = {
@@ -166,6 +304,18 @@ const updateBuddyProgress = async (req, res) => {
           link: "/community",
         });
         emitToUser(userId, "notification:new", notif);
+
+        // Send milestone email to registered user email
+        if (req.user.email) {
+          notifyMilestoneUnlocked({
+            recipientEmail: req.user.email,
+            recipientName: req.user.name,
+            milestoneName: m.name,
+            targetPage: m.targetPage,
+            bookTitle: buddyRead.bookId?.title,
+            buddyTitle: buddyRead.title,
+          }).catch((err) => console.warn("[Email dispatch error]:", err.message));
+        }
       }
     }
 
@@ -180,7 +330,7 @@ const postBuddyMessage = async (req, res) => {
     const userId = req.user._id;
     const { text, page = 0, isSpoiler = false } = req.body;
 
-    const buddyRead = await BuddyRead.findById(req.params.id);
+    const buddyRead = await BuddyRead.findById(req.params.id).populate("bookId", "title");
     if (!buddyRead) return res.status(404).json({ message: "Buddy read not found" });
 
     const newMsg = {
@@ -204,7 +354,7 @@ const postBuddyMessage = async (req, res) => {
       message: savedMsg,
     });
 
-    // Notify other participants
+    // Notify other participants via WebSocket and registered email
     const otherParticipantIds = [
       ...new Set(
         [buddyRead.creatorId, ...buddyRead.participants.map((p) => p.userId)]
@@ -223,7 +373,30 @@ const postBuddyMessage = async (req, res) => {
         message: `${req.user.name || "A reader"} sent a message in "${buddyRead.title}"`,
         link: "/community",
       });
-      emitToUser(targetId, "notification:new", notif);
+      emitToUser(targetId, "notification:new", {
+        _id: notif._id.toString(),
+        userId: notif.userId.toString(),
+        senderId: notif.senderId?.toString(),
+        senderName: notif.senderName,
+        type: notif.type,
+        title: notif.title,
+        message: notif.message,
+        link: notif.link,
+        createdAt: notif.createdAt || new Date(),
+      });
+
+      const targetUser = await User.findById(targetId);
+      if (targetUser && targetUser.email) {
+        notifyBuddyMessage({
+          recipientEmail: targetUser.email,
+          recipientName: targetUser.name,
+          senderName: req.user.name || "A reader",
+          buddyTitle: buddyRead.title,
+          bookTitle: buddyRead.bookId?.title,
+          messageText: text,
+          page: parseInt(page) || 0,
+        }).catch((err) => console.warn("[Email dispatch error]:", err.message));
+      }
     }
 
     res.status(201).json(savedMsg);
@@ -382,7 +555,26 @@ const toggleFollowUser = async (req, res) => {
         followersCount: targetUser.followers.length,
       });
 
-      emitToUser(targetUserId, "notification:new", notif);
+      emitToUser(targetUserId, "notification:new", {
+        _id: notif._id.toString(),
+        userId: notif.userId.toString(),
+        senderId: notif.senderId?.toString(),
+        senderName: notif.senderName,
+        type: notif.type,
+        title: notif.title,
+        message: notif.message,
+        link: notif.link,
+        createdAt: notif.createdAt || new Date(),
+      });
+
+      // Send real-time follow email to target's registered email
+      if (targetUser.email) {
+        notifyNewFollower({
+          recipientEmail: targetUser.email,
+          recipientName: targetUser.name,
+          followerName: currentUser.name,
+        }).catch((err) => console.warn("[Email dispatch error]:", err.message));
+      }
     }
 
     await currentUser.save();
@@ -400,8 +592,8 @@ const toggleFollowUser = async (req, res) => {
 const getCommunityReaders = async (req, res) => {
   try {
     const readers = await User.find({})
-      .select("name avatar bio level badges streak favoriteGenres")
-      .limit(20);
+      .select("name email avatar bio level badges streak favoriteGenres")
+      .limit(50);
     res.json(readers);
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -106,46 +106,47 @@ export function ReadoraProvider({ children }) {
     showToast("You have been signed out.");
   };
 
-  const demoLogin = async () => {
+  // Send OTP to registered email
+  const sendOtp = async (email, name = "") => {
     try {
-      // First try to login as demo user
-      const res = await api.login({
-        email: "reader@readora.com",
-        password: "password123",
-      }).catch(async () => {
-        // If demo user does not exist yet, register them
-        return await api.register({
-          name: "Lyra Valerius",
-          email: "reader@readora.com",
-          password: "password123",
-          role: "user",
-        });
-      });
+      const res = await api.sendOtp({ email, name });
+      showToast(`One-Time Code (OTP) dispatched to ${email}! Check inbox.`);
+      return res;
+    } catch (err) {
+      showToast(err.message || "Could not dispatch OTP", "error");
+      throw err;
+    }
+  };
 
-      if (res && res.token) {
+  // Verify OTP and complete login / registration
+  const verifyOtp = async (email, otp, name = "") => {
+    try {
+      const res = await api.verifyOtp({ email, otp, name });
+      if (res && res.token && res.user) {
         login(res.user, res.token);
+        closeAuthModal();
+        showToast(`Welcome back, ${res.user.name}! ✦`);
+        return res;
       }
     } catch (err) {
-      // Offline fallback demo user
-      const mockUser = {
-        _id: "demo_user_1",
-        name: "Lyra Valerius",
-        email: "reader@readora.com",
-        role: "user",
-        level: 3,
-        xp: 480,
-        avatar: "",
-        bio: "Night owl explorer navigating speculative and cosy worlds.",
-        favoriteQuote: "There is no friend as loyal as a book.",
-        favoriteGenres: ["Fantasy", "Literary Fiction", "Mystery"],
-        streak: { current: 5, longest: 14 },
-        badges: [
-          { id: "b1", name: "New Explorer", icon: "✦", description: "Began journey" },
-          { id: "b2", name: "First Finish", icon: "🏆", description: "Completed a book" },
-        ],
-        readingGoal: { annualTarget: 25, monthlyTarget: 2, pagesTarget: 7500 },
-      };
-      login(mockUser, "demo_jwt_token_local");
+      showToast(err.message || "Invalid verification code", "error");
+      throw err;
+    }
+  };
+
+  // Google Authentication
+  const googleLogin = async (googleUserData) => {
+    try {
+      const res = await api.googleAuth(googleUserData);
+      if (res && res.token && res.user) {
+        login(res.user, res.token);
+        closeAuthModal();
+        showToast(`Signed in with Google! Welcome ${res.user.name} ✦`);
+        return res;
+      }
+    } catch (err) {
+      showToast(err.message || "Google sign-in failed", "error");
+      throw err;
     }
   };
 
@@ -237,6 +238,10 @@ export function ReadoraProvider({ children }) {
   useEffect(() => {
     if (auth.token) {
       fetchNotifications();
+      const interval = setInterval(() => {
+        fetchNotifications();
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [auth.token, fetchNotifications]);
 
@@ -307,16 +312,25 @@ export function ReadoraProvider({ children }) {
       }
     };
 
+    // 5. Event: buddyread:invite
+    const handleBuddyInvite = (data) => {
+      console.log("[Socket.IO Client] Received buddyread:invite", data);
+      showToast(`👥 ${data.creatorId?.name || "A reader"} invited you to Buddy Read "${data.title}"! ✦`, "info");
+      fetchNotifications();
+    };
+
     s.on("notification:new", handleNewNotification);
     s.on("follow:new", handleNewFollow);
     s.on("challenge:milestone", handleMilestone);
     s.on("progress:updated", handleProgressUpdated);
+    s.on("buddyread:invite", handleBuddyInvite);
 
     return () => {
       s.off("notification:new", handleNewNotification);
       s.off("follow:new", handleNewFollow);
       s.off("challenge:milestone", handleMilestone);
       s.off("progress:updated", handleProgressUpdated);
+      s.off("buddyread:invite", handleBuddyInvite);
     };
   }, [auth.token]);
 
@@ -567,7 +581,9 @@ export function ReadoraProvider({ children }) {
     auth,
     login,
     logout,
-    demoLogin,
+    sendOtp,
+    verifyOtp,
+    googleLogin,
     updateProfile,
     authModal,
     openAuthModal,

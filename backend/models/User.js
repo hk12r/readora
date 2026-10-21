@@ -29,7 +29,27 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      required: true,
+      default: "",
+    },
+
+    otp: {
+      type: String,
+      default: null,
+    },
+
+    otpExpires: {
+      type: Date,
+      default: null,
+    },
+
+    googleId: {
+      type: String,
+      default: null,
+    },
+
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
     },
 
     role: {

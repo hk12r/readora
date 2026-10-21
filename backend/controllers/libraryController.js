@@ -345,7 +345,7 @@ const removeFromLibrary = async (req, res) => {
   }
 };
 
-// POST - Import CSV or JSON from Goodreads, StoryGraph, Fable, or Readora
+// POST - Import CSV or JSON from Goodreads, Fable, or Readora
 const importLibrary = async (req, res) => {
   try {
     const userId = req.user._id;

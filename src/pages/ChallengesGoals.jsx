@@ -372,7 +372,7 @@ function ChallengesGoals() {
                 (p) => p.userId?.toString() === auth.user?._id?.toString()
               );
               const isJoined = !!participant;
-              const progress = participant?.progress || 0;
+              const progress = participant?.progress !== undefined ? participant.progress : (c.userProgress || 0);
               const pct = Math.min(100, Math.round((progress / c.targetCount) * 100));
 
               return (

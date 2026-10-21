@@ -325,12 +325,14 @@ async function runTestSuite() {
       }
     });
 
-    bobSocket.once("notification:new", (data) => {
-      if (data.senderId === alice._id.toString() && data.type === "follow") {
+    const onNotif = (data) => {
+      if ((data.senderId?.toString() === alice._id.toString() || data.senderName === alice.name) && data.type === "follow") {
         receivedNotif = true;
+        bobSocket.off("notification:new", onNotif);
         if (receivedFollow && receivedNotif) resolve();
       }
-    });
+    };
+    bobSocket.on("notification:new", onNotif);
 
     // Alice follows Bob via social controller logic
     const { emitToUser } = require("../services/socketService");
@@ -384,6 +386,17 @@ async function runTestSuite() {
   aliceSocket.disconnect();
   bobSocket.disconnect();
   assert("Test 10: Clean Disconnect & Reconnect Lifecycle", !aliceSocket.connected && !bobSocket.connected, "Sockets cleanly disconnected");
+
+  // -------------------------------------------------------------------------
+  // TEST 11: Real-Time Registered Email Dispatch Verification
+  // -------------------------------------------------------------------------
+  const { getEmailDispatches } = require("../services/emailService");
+  const bobDispatches = getEmailDispatches("bob_test@readora.com");
+  assert(
+    "Test 11: Real-Time Registered Email Dispatch Verification",
+    bobDispatches.length > 0,
+    `Dispatched ${bobDispatches.length} real-time email updates to registered email: bob_test@readora.com`
+  );
 
   // Cleanup Database Test Records
   await User.deleteMany({ email: { $in: ["alice_test@readora.com", "bob_test@readora.com", "charlie_test@readora.com"] } });

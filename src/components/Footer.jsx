@@ -87,10 +87,10 @@ function Footer() {
               </Link>
 
               <Link
-                to="/notes"
+                to="/profile"
                 className="text-readora-brown/75 transition hover:text-readora-purple"
               >
-                Smart Study Notes
+                Reading Profile & Goals
               </Link>
 
               <Link

@@ -1,6 +1,8 @@
 const Challenge = require("../models/Challenge");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
+const LibraryEntry = require("../models/LibraryEntry");
+const ReadingSession = require("../models/ReadingSession");
 const { emitToUser } = require("../services/socketService");
 
 // Seed default challenges if none exist
@@ -78,17 +80,61 @@ const seedChallengesIfNeeded = async () => {
   }
 };
 
-// GET all challenges (public + user-created)
+// GET all challenges (public + user-created) with personalized reading progress
 const getChallenges = async (req, res) => {
   try {
     await seedChallengesIfNeeded();
     const userId = req.user?._id;
 
+    let readBooksCount = 0;
+    let totalPages = 0;
+    let uniqueCountries = 0;
+
+    if (userId) {
+      const readEntries = await LibraryEntry.find({ userId, shelf: "Read" }).populate("bookId");
+      readBooksCount = readEntries.length;
+      const sessions = await ReadingSession.find({ userId });
+      const sessionPages = sessions.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
+      const bookPages = readEntries.reduce((sum, e) => sum + (e.bookId?.pages || 0), 0);
+      totalPages = Math.max(sessionPages, bookPages);
+      uniqueCountries = new Set(
+        readEntries.map((e) => e.bookId?.authorCountry || e.bookId?.genre).filter(Boolean)
+      ).size;
+    }
+
     const challenges = await Challenge.find({
       $or: [{ isPublic: true }, { creatorId: userId }],
     }).sort({ createdAt: -1 });
 
-    res.json(challenges);
+    const personalized = challenges.map((c) => {
+      const cObj = c.toObject();
+      let calculatedProgress = 0;
+      if (cObj.type === "count") calculatedProgress = readBooksCount;
+      else if (cObj.type === "pages") calculatedProgress = totalPages;
+      else if (cObj.type === "country") calculatedProgress = uniqueCountries;
+      else if (cObj.type === "prompts") {
+        calculatedProgress = (cObj.prompts || []).filter((p) => p.completed).length;
+      }
+
+      cObj.userProgress = calculatedProgress;
+
+      if (userId && cObj.participants) {
+        const pIndex = cObj.participants.findIndex(
+          (p) => p.userId?.toString() === userId.toString()
+        );
+        if (pIndex !== -1) {
+          cObj.participants[pIndex].progress = Math.max(
+            cObj.participants[pIndex].progress || 0,
+            calculatedProgress
+          );
+          cObj.participants[pIndex].completed =
+            cObj.participants[pIndex].progress >= cObj.targetCount;
+        }
+      }
+      return cObj;
+    });
+
+    res.json(personalized);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

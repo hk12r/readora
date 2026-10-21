@@ -1,8 +1,14 @@
 import { io } from "socket.io-client";
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  (typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://localhost:5000"
+    : "");
 
 let socketInstance = null;
+let currentSocketToken = null;
 
 /**
  * Connect to Socket.IO server with JWT authentication
@@ -10,16 +16,20 @@ let socketInstance = null;
  * @returns {Socket}
  */
 export function connectSocket(token) {
+  const targetToken = token || (typeof window !== "undefined" ? localStorage.getItem("readora_token") : "") || "";
+
   if (socketInstance) {
-    if (socketInstance.connected) {
+    if (socketInstance.connected && currentSocketToken === targetToken) {
       return socketInstance;
     }
     socketInstance.disconnect();
+    socketInstance = null;
   }
 
+  currentSocketToken = targetToken;
   socketInstance = io(SOCKET_URL, {
     auth: {
-      token: token || localStorage.getItem("readora_token") || "",
+      token: targetToken,
     },
     transports: ["websocket", "polling"],
     reconnection: true,

@@ -242,18 +242,19 @@ const getAnalytics = async (req, res) => {
       ? Math.round(
           (ratedEntries.reduce((sum, e) => sum + e.rating, 0) / ratedEntries.length) * 10
         ) / 10
-      : 4.2;
+      : 0;
 
     // Average book length
     const avgBookLength = readBooks.length
       ? Math.round(
-          readBooks.reduce((sum, e) => sum + (e.bookId?.pages || 320), 0) / readBooks.length
+          readBooks.reduce((sum, e) => sum + (e.bookId?.pages || 300), 0) / readBooks.length
         )
-      : 340;
+      : (entries.length ? Math.round(entries.reduce((sum, e) => sum + (e.bookId?.pages || 300), 0) / entries.length) : 0);
 
-    // Genre distribution
+    // Genre distribution - from read books or all library books
     const genreMap = {};
-    readBooks.forEach((e) => {
+    const sourceBooks = readBooks.length > 0 ? readBooks : entries;
+    sourceBooks.forEach((e) => {
       const g = e.bookId?.genre || "Fiction";
       genreMap[g] = (genreMap[g] || 0) + 1;
     });
@@ -270,7 +271,7 @@ const getAnalytics = async (req, res) => {
     // Fiction vs Nonfiction
     let fictionCount = 0;
     let nonfictionCount = 0;
-    readBooks.forEach((e) => {
+    sourceBooks.forEach((e) => {
       if (e.bookId?.isFiction === false) nonfictionCount++;
       else fictionCount++;
     });
@@ -286,9 +287,8 @@ const getAnalytics = async (req, res) => {
       const mMonth = d.getMonth();
 
       const booksInMonth = readBooks.filter((e) => {
-        if (!e.finishDate) return false;
-        const fd = new Date(e.finishDate);
-        return fd.getFullYear() === mYear && fd.getMonth() === mMonth;
+        const entryDate = e.finishDate ? new Date(e.finishDate) : new Date(e.updatedAt || e.createdAt);
+        return entryDate.getFullYear() === mYear && entryDate.getMonth() === mMonth;
       }).length;
 
       const pagesInMonth = sessions
@@ -301,14 +301,16 @@ const getAnalytics = async (req, res) => {
       monthlyData.push({
         month: monthNames[mMonth],
         books: booksInMonth,
-        pages: pagesInMonth || booksInMonth * 300,
+        pages: pagesInMonth || (booksInMonth * 280),
       });
     }
 
     // Reading speed (pages per hour)
     const totalMinutes = sessions.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
     const readingPacePerHour =
-      totalMinutes > 0 ? Math.round((sessionPages / totalMinutes) * 60) : 45;
+      totalMinutes > 0
+        ? Math.round((sessionPages / totalMinutes) * 60)
+        : (sessionPages > 0 ? 40 : 0);
 
     // Author diversity
     const authorMap = {};
