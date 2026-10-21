@@ -39,6 +39,7 @@ function Community() {
 
   // New Buddy Read Modal
   const [createBuddyModalOpen, setCreateBuddyModalOpen] = useState(false);
+  const [incomingInvite, setIncomingInvite] = useState(null);
   const [newBuddyData, setNewBuddyData] = useState({
     title: "",
     bookId: "",
@@ -192,6 +193,24 @@ function Community() {
     if (auth.user) loadEmailHistory();
   }, [auth.user]);
 
+  // Read URL query parameters (e.g. from notifications or direct links)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab");
+    const buddyIdParam = params.get("buddyReadId");
+
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+    if (buddyIdParam && buddyReads.length > 0) {
+      const match = buddyReads.find((b) => b._id === buddyIdParam);
+      if (match) {
+        setSelectedBuddyRead(match);
+        setActiveTab("buddyReads");
+      }
+    }
+  }, [buddyReads]);
+
   // Listen for real-time buddy read invitations
   useEffect(() => {
     if (!socket) return;
@@ -205,7 +224,8 @@ function Community() {
           } catch (_) {}
           return updated;
         });
-        showToast(`👥 Invitation to read "${buddy.title || "Book"}" received! ✦`, "info");
+        setIncomingInvite(buddy);
+        showToast(`👥 ${buddy.creatorId?.name || "A reader"} invited you to Buddy Read "${buddy.title || "Book"}"! ✦`, "info");
       }
     };
     socket.on("buddyread:invite", handleBuddyInvite);
@@ -682,6 +702,48 @@ function Community() {
           </div>
         ) : (
           <>
+            {/* INCOMING REAL-TIME LIVE BUDDY READ INVITATION ALERT */}
+            {incomingInvite && (
+              <div className="mt-8 rounded-3xl border-2 border-readora-gold bg-gradient-to-r from-readora-purple via-readora-plum to-readora-purple p-6 text-readora-cream shadow-2xl animate-scale-in flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-readora-gold text-2xl text-readora-purple font-bold shrink-0 shadow-gold">
+                    👥
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-readora-gold">
+                      ✦ Real-Time Live Buddy Read Invitation! ✦
+                    </span>
+                    <h4 className="font-display text-base font-bold text-white">
+                      {incomingInvite.creatorId?.name || "A reading companion"} invites you to read "{incomingInvite.title || incomingInvite.bookId?.title}"!
+                    </h4>
+                    <p className="text-xs text-readora-cream/80">
+                      The session is LIVE right now! Join to chat and sync checkpoint progress in real time.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBuddyRead(incomingInvite);
+                      setActiveTab("buddyReads");
+                      setIncomingInvite(null);
+                    }}
+                    className="rounded-full bg-readora-gold px-6 py-2.5 text-xs font-bold text-readora-purple shadow-gold hover:bg-readora-goldLight transition"
+                  >
+                    Join Live Room Now ⚡
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIncomingInvite(null)}
+                    className="rounded-full bg-white/10 px-3 py-2.5 text-xs text-readora-cream/70 hover:bg-white/20 transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* TABS */}
             <div className="mt-8 flex gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-readora-purple/10">
               {[
@@ -1019,7 +1081,9 @@ function Community() {
                   <div className="mt-3 space-y-3">
                     {(selectedBuddyRead.participants || []).map((p) => {
                       const totalP = selectedBuddyRead.bookId?.pages || 300;
-                      const isMe = (p.userId?._id || p.userId)?.toString() === auth.user?._id?.toString();
+                      const isMe =
+                        (p.userId?._id || p.userId)?.toString() === auth.user?._id?.toString() ||
+                        (auth.user?.email && p.userId?.email && auth.user.email.toLowerCase().trim() === p.userId.email.toLowerCase().trim());
                       return (
                         <div key={p.userId?._id || p._id} className="rounded-xl bg-readora-cream/30 p-2.5">
                           <div className="flex justify-between text-xs font-semibold text-readora-purple">
@@ -1131,7 +1195,9 @@ function Community() {
                       .filter((m) => m && typeof m === "object" && !Array.isArray(m) && (m.text || m.isSpoiler))
                       .map((m, idx) => {
                         const myParticipant = selectedBuddyRead.participants?.find(
-                          (p) => (p.userId?._id || p.userId)?.toString() === auth.user?._id?.toString()
+                          (p) =>
+                            (p.userId?._id || p.userId)?.toString() === auth.user?._id?.toString() ||
+                            (auth.user?.email && p.userId?.email && auth.user.email.toLowerCase().trim() === p.userId.email.toLowerCase().trim())
                         );
                         const myCurrentPage = myParticipant?.currentPage || 0;
                         const isVeiled =
@@ -1139,7 +1205,10 @@ function Community() {
                           !unveiledSpoilers.has(m._id || idx) &&
                           m.page > myCurrentPage;
 
-                        const isMe = (m.userId?._id || m.userId)?.toString() === auth.user?._id?.toString();
+                        const isMe =
+                          (m.userId?._id || m.userId)?.toString() === auth.user?._id?.toString() ||
+                          (auth.user?.email && m.userEmail && auth.user.email.toLowerCase().trim() === m.userEmail.toLowerCase().trim()) ||
+                          (m.userName && auth.user?.name && m.userName.trim().toLowerCase() === auth.user.name.trim().toLowerCase());
 
                         const rawDate = m.createdAt || m.timestamp || m.date;
                         const parsedDate = rawDate ? new Date(rawDate) : new Date();
@@ -1262,6 +1331,35 @@ function Community() {
                     className="text-xs font-bold text-readora-purple hover:underline"
                   >
                     + Start Another Buddy Read
+                  </button>
+                </div>
+
+                {/* PROMINENT LIVE SESSION ACTION CALLOUT FOR PARTNER */}
+                <div className="rounded-3xl border border-readora-gold/40 bg-gradient-to-r from-readora-purple/10 via-readora-gold/15 to-readora-purple/10 p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-readora-gold/20 text-2xl text-readora-purple font-bold">
+                      ⚡
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-bold text-readora-purple">
+                          Live Buddy Read Active
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-800">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live
+                        </span>
+                      </div>
+                      <p className="text-xs text-readora-brown/75 mt-0.5">
+                        "{buddyReads[0].title || buddyReads[0].bookId?.title}" is in progress! Join the room to chat and synchronize reading pages with your companion.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBuddyRead(buddyReads[0])}
+                    className="rounded-full bg-readora-purple px-6 py-2.5 text-xs font-bold text-readora-cream shadow hover:bg-readora-plum transition whitespace-nowrap shrink-0"
+                  >
+                    Enter Live Room & Chat 💬 →
                   </button>
                 </div>
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">

@@ -112,11 +112,23 @@ function initSocketServer(server) {
           return;
         }
 
-        // Verify authorization: must be creator or listed participant
-        const isCreator = buddyRead.creatorId.toString() === userId;
-        const isParticipant = buddyRead.participants.some(
-          (p) => p.userId && p.userId.toString() === userId
+        // Verify authorization: must be creator or listed participant (by ID or invited email)
+        let isCreator = buddyRead.creatorId.toString() === userId;
+        let isParticipant = buddyRead.participants.some(
+          (p) => (p.userId?._id || p.userId)?.toString() === userId
         );
+
+        if (!isCreator && !isParticipant && socket.user?.email) {
+          const userEmail = socket.user.email.toLowerCase().trim();
+          await buddyRead.populate("participants.userId", "email name");
+          if (
+            buddyRead.participants.some(
+              (p) => p.userId?.email?.toLowerCase().trim() === userEmail
+            )
+          ) {
+            isParticipant = true;
+          }
+        }
 
         if (!isCreator && !isParticipant) {
           if (callback) callback({ success: false, error: "Not authorized to join this Buddy Read room" });
@@ -172,10 +184,22 @@ function initSocketServer(server) {
         }
 
         // Authorize participant
-        const isCreator = buddyRead.creatorId.toString() === userId;
-        const isParticipant = buddyRead.participants.some(
-          (p) => p.userId && p.userId.toString() === userId
+        let isCreator = buddyRead.creatorId.toString() === userId;
+        let isParticipant = buddyRead.participants.some(
+          (p) => (p.userId?._id || p.userId)?.toString() === userId
         );
+
+        if (!isCreator && !isParticipant && socket.user?.email) {
+          const userEmail = socket.user.email.toLowerCase().trim();
+          await buddyRead.populate("participants.userId", "email name");
+          if (
+            buddyRead.participants.some(
+              (p) => p.userId?.email?.toLowerCase().trim() === userEmail
+            )
+          ) {
+            isParticipant = true;
+          }
+        }
 
         if (!isCreator && !isParticipant) {
           if (callback) callback({ success: false, error: "Not authorized to send messages in this Buddy Read" });
@@ -187,6 +211,7 @@ function initSocketServer(server) {
           userId: socket.user._id,
           userName: socket.user.name,
           userAvatar: socket.user.avatar || "",
+          userEmail: socket.user.email || "",
           text: text.trim(),
           page: parseInt(page) || 0,
           isSpoiler: Boolean(isSpoiler),
@@ -267,9 +292,17 @@ function initSocketServer(server) {
           return;
         }
 
-        const participant = buddyRead.participants.find(
-          (p) => p.userId && p.userId.toString() === userId
+        let participant = buddyRead.participants.find(
+          (p) => (p.userId?._id || p.userId)?.toString() === userId
         );
+
+        if (!participant && socket.user?.email) {
+          const userEmail = socket.user.email.toLowerCase().trim();
+          await buddyRead.populate("participants.userId", "email name");
+          participant = buddyRead.participants.find(
+            (p) => p.userId?.email?.toLowerCase().trim() === userEmail
+          );
+        }
 
         if (!participant) {
           if (callback) callback({ success: false, error: "User is not a participant in this Buddy Read" });

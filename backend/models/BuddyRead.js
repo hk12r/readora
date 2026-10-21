@@ -9,6 +9,7 @@ const messageSchema = new mongoose.Schema(
     },
     userName: { type: String, required: true },
     userAvatar: { type: String, default: "" },
+    userEmail: { type: String, default: "" },
     text: { type: String, required: true },
     page: { type: Number, default: 0 },
     isSpoiler: { type: Boolean, default: false },

@@ -89,11 +89,26 @@ function Navbar({ onOpenSidebar }) {
                           </p>
                         ) : (
                           notifications.list.map((n) => (
-                            <div key={n._id} className="p-2.5 text-xs transition hover:bg-white/60">
-                              <p className="font-bold text-readora-purple">{n.title}</p>
-                              <p className="text-readora-brown/80">{n.message}</p>
+                            <div
+                              key={n._id}
+                              onClick={() => {
+                                setNotifOpen(false);
+                                if (n.link) {
+                                  navigate(n.link);
+                                }
+                              }}
+                              className="p-2.5 text-xs transition hover:bg-white/80 cursor-pointer rounded-xl group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <p className="font-bold text-readora-purple group-hover:text-readora-plum">{n.title}</p>
+                                <span className="text-[9px] text-readora-gold font-bold">Open →</span>
+                              </div>
+                              <p className="text-readora-brown/80 mt-0.5">{n.message}</p>
                               <p className="mt-1 text-[9px] text-readora-brown/50">
-                                {new Date(n.createdAt).toLocaleTimeString()}
+                                {(() => {
+                                  const d = n.createdAt ? new Date(n.createdAt) : new Date();
+                                  return isNaN(d.getTime()) ? "Recently" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                                })()}
                               </p>
                             </div>
                           ))

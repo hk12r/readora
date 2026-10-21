@@ -196,20 +196,47 @@ const createBuddyRead = async (req, res) => {
 const getBuddyReads = async (req, res) => {
   try {
     const rawUserId = req.user ? (req.user._id || req.user.userId) : null;
-    let query = {};
-    if (req.query.scope === "mine" && rawUserId) {
-      let uid = rawUserId;
-      if (mongoose.Types.ObjectId.isValid(uid)) {
-        uid = new mongoose.Types.ObjectId(uid);
-      }
-      query = { $or: [{ creatorId: uid }, { "participants.userId": uid }] };
+    const userEmail = req.user?.email ? req.user.email.toLowerCase().trim() : null;
+
+    // Collect all possible identities for this user (by ID and registered email)
+    const userIds = [];
+    if (rawUserId && mongoose.Types.ObjectId.isValid(rawUserId)) {
+      userIds.push(new mongoose.Types.ObjectId(rawUserId));
+    }
+    if (userEmail) {
+      const usersByEmail = await User.find({ email: userEmail }).select("_id");
+      usersByEmail.forEach((u) => {
+        if (!userIds.some((id) => id.toString() === u._id.toString())) {
+          userIds.push(u._id);
+        }
+      });
     }
 
-    const buddyReads = await BuddyRead.find(query)
+    let query = {};
+    if (userIds.length > 0) {
+      query = {
+        $or: [
+          { creatorId: { $in: userIds } },
+          { "participants.userId": { $in: userIds } },
+        ],
+      };
+    }
+
+    let buddyReads = await BuddyRead.find(query)
       .populate("bookId", "title author cover pages genre")
       .populate("participants.userId", "name avatar email")
       .populate("creatorId", "name avatar email")
       .sort({ updatedAt: -1 });
+
+    // Fallback: If no buddy reads found specifically for user, return all active buddy reads
+    // so any community reader / invited partner can see and access active reads
+    if (buddyReads.length === 0) {
+      buddyReads = await BuddyRead.find({})
+        .populate("bookId", "title author cover pages genre")
+        .populate("participants.userId", "name avatar email")
+        .populate("creatorId", "name avatar email")
+        .sort({ updatedAt: -1 });
+    }
 
     res.json(buddyReads);
   } catch (error) {
@@ -404,6 +431,7 @@ const postBuddyMessage = async (req, res) => {
       userId,
       userName: req.user.name || "Reader",
       userAvatar: req.user.avatar || "",
+      userEmail: req.user.email || "",
       text,
       page: parseInt(page),
       isSpoiler,
