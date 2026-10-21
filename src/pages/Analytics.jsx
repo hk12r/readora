@@ -119,6 +119,42 @@ function Analytics() {
         {/* TAB 1: OVERVIEW & RICH VISUAL CHARTS */}
         {activeTab === "overview" && (
           <div className="mt-8 space-y-8 animate-fade-in">
+            {/* PERSONALIZED ONBOARDING MESSAGE FOR NEW READERS */}
+            {(analytics?.overview?.totalBooksRead ?? library.shelves.read.length) < 2 && (
+              <div className="rounded-3xl border-2 border-dashed border-readora-gold/60 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/80 p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-readora-gold/20 text-3xl shadow-xs">
+                    📚
+                  </div>
+                  <div className="flex-1">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-readora-gold/20 px-3 py-0.5 text-[11px] font-bold text-readora-purple">
+                      ✦ Personalized Reader Stats ✦
+                    </span>
+                    <h3 className="mt-1 font-display text-lg font-bold text-readora-purple">
+                      Start reading books or read at least 2 books to generate your personalized stats!
+                    </h3>
+                    <p className="mt-1 text-xs text-readora-brown/75 leading-relaxed">
+                      Welcome, {auth.user?.name || "Reader"}! You currently have {analytics?.overview?.totalBooksRead ?? library.shelves.read.length} finished {((analytics?.overview?.totalBooksRead ?? library.shelves.read.length) === 1) ? "book" : "books"} in your personal library. Log reading sessions or mark finished books in your library to unlock your custom reading velocity charts, genre donut palette, and personalized Spotify-style Year in Books.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <a
+                      href="/library"
+                      className="rounded-full bg-readora-purple px-5 py-2.5 text-xs font-bold text-readora-cream shadow hover:bg-readora-plum transition"
+                    >
+                      Open Library 📖
+                    </a>
+                    <a
+                      href="/discover"
+                      className="rounded-full border border-readora-purple/20 bg-white px-5 py-2.5 text-xs font-bold text-readora-purple hover:bg-readora-cream transition"
+                    >
+                      Discover Books ✦
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* STATS BANNER */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {[

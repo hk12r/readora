@@ -4,7 +4,7 @@ import api from "../services/api";
 import confetti from "canvas-confetti";
 
 function ChallengesGoals() {
-  const { auth, openAuthModal, showToast } = useReadora();
+  const { auth, openAuthModal, showToast, library } = useReadora();
 
   const [goals, setGoals] = useState(null);
   const [challenges, setChallenges] = useState([]);
@@ -296,64 +296,125 @@ function ChallengesGoals() {
             </form>
           )}
 
-          {/* GOAL METERS GRID */}
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                title: "2026 Annual Goal",
-                current: goals?.annual?.current ?? 8,
-                target: goals?.annual?.target ?? 25,
-                unit: "books",
-                pct: goals?.annual?.percentage ?? 32,
-                color: "from-amber-400 to-amber-600",
-              },
-              {
-                title: "October Monthly Goal",
-                current: goals?.monthly?.current ?? 2,
-                target: goals?.monthly?.target ?? 3,
-                unit: "books",
-                pct: goals?.monthly?.percentage ?? 67,
-                color: "from-readora-purple to-readora-royal",
-              },
-              {
-                title: "Page Summit Goal",
-                current: goals?.pages?.current ?? 2850,
-                target: goals?.pages?.target ?? 7500,
-                unit: "pages",
-                pct: goals?.pages?.percentage ?? 38,
-                color: "from-emerald-400 to-emerald-600",
-              },
-              {
-                title: "Reading Consistency",
-                current: goals?.streak?.current ?? 5,
-                target: goals?.streak?.target ?? 30,
-                unit: "days",
-                pct: goals?.streak?.percentage ?? 17,
-                color: "from-rose-400 to-rose-600",
-              },
-            ].map((g) => (
-              <div
-                key={g.title}
-                className="rounded-3xl border border-readora-purple/10 bg-white/80 p-5 shadow-sm"
-              >
-                <div className="flex justify-between items-center text-xs font-bold text-readora-purple">
-                  <span>{g.title}</span>
-                  <span className="text-readora-gold">{g.pct}%</span>
-                </div>
-                <p className="mt-3 font-display text-2xl font-bold text-readora-purple">
-                  {g.current}{" "}
-                  <span className="text-xs font-normal text-readora-brown/70">
-                    / {g.target} {g.unit}
-                  </span>
-                </p>
-                <div className="mt-3 h-2 w-full rounded-full bg-readora-purple/10 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full bg-gradient-to-r ${g.color}`}
-                    style={{ width: `${Math.min(100, g.pct)}%` }}
-                  />
+          {/* PERSONALIZED ONBOARDING MESSAGE FOR NEW READERS */}
+          {(() => {
+            const actualFinishedBooks = library?.shelves?.read?.length ?? (goals?.annual?.current || 0);
+            if (actualFinishedBooks >= 2) return null;
+
+            return (
+              <div className="mt-6 rounded-3xl border-2 border-dashed border-readora-gold/60 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/80 p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-readora-gold/20 text-3xl shadow-xs">
+                    🎯
+                  </div>
+                  <div className="flex-1">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-readora-gold/20 px-3 py-0.5 text-[11px] font-bold text-readora-purple">
+                      ✦ Personalized Reading Goals & Quests ✦
+                    </span>
+                    <h3 className="mt-1 font-display text-lg font-bold text-readora-purple">
+                      Start reading books or read at least 2 books to generate your personalized goal progress!
+                    </h3>
+                    <p className="mt-1 text-xs text-readora-brown/75 leading-relaxed">
+                      Welcome, {auth.user?.name || "Reader"}! You currently have {actualFinishedBooks} finished {actualFinishedBooks === 1 ? "book" : "books"}. As you read and track titles in your library, your personal goal meters, reading pace summit, and seasonal quests will calibrate specifically to your velocity.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <a
+                      href="/library"
+                      className="rounded-full bg-readora-purple px-5 py-2.5 text-xs font-bold text-readora-cream shadow hover:bg-readora-plum transition"
+                    >
+                      Open Library 📖
+                    </a>
+                    <a
+                      href="/discover"
+                      className="rounded-full border border-readora-purple/20 bg-white px-5 py-2.5 text-xs font-bold text-readora-purple hover:bg-readora-cream transition"
+                    >
+                      Explore Quests ✦
+                    </a>
+                  </div>
                 </div>
               </div>
-            ))}
+            );
+          })()}
+
+          {/* GOAL METERS GRID */}
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {(() => {
+              const actualFinishedBooks = library?.shelves?.read?.length ?? (goals?.annual?.current || 0);
+              const actualFinishedPages =
+                library?.shelves?.read?.reduce((sum, e) => sum + (e.bookId?.pages || 0), 0) ??
+                (goals?.pages?.current || 0);
+
+              const annualTarget = goals?.annual?.target ?? 25;
+              const annualPct = Math.min(100, Math.round((actualFinishedBooks / annualTarget) * 100));
+
+              const monthlyTarget = goals?.monthly?.target ?? 2;
+              const monthlyCurrent = Math.min(actualFinishedBooks, monthlyTarget);
+              const monthlyPct = Math.min(100, Math.round((monthlyCurrent / monthlyTarget) * 100));
+
+              const pagesTarget = goals?.pages?.target ?? 7500;
+              const pagesPct = Math.min(100, Math.round((actualFinishedPages / pagesTarget) * 100));
+
+              const streakDays = auth.user?.streak?.current || goals?.streak?.current || 1;
+              const streakPct = Math.min(100, Math.round((streakDays / 30) * 100));
+
+              return [
+                {
+                  title: "2026 Annual Goal",
+                  current: actualFinishedBooks,
+                  target: annualTarget,
+                  unit: "books",
+                  pct: annualPct,
+                  color: "from-amber-400 to-amber-600",
+                },
+                {
+                  title: "Monthly Goal",
+                  current: monthlyCurrent,
+                  target: monthlyTarget,
+                  unit: "books",
+                  pct: monthlyPct,
+                  color: "from-readora-purple to-readora-royal",
+                },
+                {
+                  title: "Page Summit Goal",
+                  current: actualFinishedPages,
+                  target: pagesTarget,
+                  unit: "pages",
+                  pct: pagesPct,
+                  color: "from-emerald-400 to-emerald-600",
+                },
+                {
+                  title: "Reading Consistency",
+                  current: streakDays,
+                  target: 30,
+                  unit: "days",
+                  pct: streakPct,
+                  color: "from-rose-400 to-rose-600",
+                },
+              ].map((g) => (
+                <div
+                  key={g.title}
+                  className="rounded-3xl border border-readora-purple/10 bg-white/80 p-5 shadow-sm"
+                >
+                  <div className="flex justify-between items-center text-xs font-bold text-readora-purple">
+                    <span>{g.title}</span>
+                    <span className="text-readora-gold">{g.pct}%</span>
+                  </div>
+                  <p className="mt-3 font-display text-2xl font-bold text-readora-purple">
+                    {g.current}{" "}
+                    <span className="text-xs font-normal text-readora-brown/70">
+                      / {g.target} {g.unit}
+                    </span>
+                  </p>
+                  <div className="mt-3 h-2 w-full rounded-full bg-readora-purple/10 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${g.color}`}
+                      style={{ width: `${Math.min(100, g.pct)}%` }}
+                    />
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         </section>
 

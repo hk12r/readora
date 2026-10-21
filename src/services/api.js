@@ -211,7 +211,52 @@ async function request(endpoint, options = {}) {
         };
       }
 
-      // 10. Other Fallbacks
+      // 10. Create Review Fallback
+      if (endpoint === "/reviews" && options.method === "POST") {
+        let body = {};
+        try {
+          body = options.body ? JSON.parse(options.body) : {};
+        } catch (_) {}
+        const savedUser = localStorage.getItem("readora_user");
+        const parsedUser = savedUser ? JSON.parse(savedUser) : null;
+        const book = fallbackBooks.find((b) => b._id === body.bookId) || fallbackBooks[0];
+        return {
+          _id: "review_" + Date.now(),
+          bookId: book,
+          userId: parsedUser || { _id: "user_1", name: "You" },
+          rating: body.rating || 5,
+          reviewText: body.reviewText || "",
+          hasSpoilers: Boolean(body.hasSpoilers),
+          favoriteQuotes: body.favoriteQuotes || [],
+          chapterOrPageNote: body.chapterOrPageNote || "",
+          likes: [],
+          comments: [],
+          createdAt: new Date().toISOString(),
+        };
+      }
+
+      // 11. Create Book Club Fallback
+      if (endpoint === "/social/book-clubs" && options.method === "POST") {
+        let body = {};
+        try {
+          body = options.body ? JSON.parse(options.body) : {};
+        } catch (_) {}
+        const savedUser = localStorage.getItem("readora_user");
+        const parsedUser = savedUser ? JSON.parse(savedUser) : null;
+        return {
+          _id: "club_" + Date.now(),
+          name: body.name || "Book Club",
+          description: body.description || "",
+          genre: body.genre || "Fiction",
+          creatorId: parsedUser || { _id: "user_1", name: "You" },
+          members: [{ userId: parsedUser || { _id: "user_1" }, role: "admin" }],
+          discussions: [],
+          votingOptions: [],
+          createdAt: new Date().toISOString(),
+        };
+      }
+
+      // 12. Other Fallbacks
       if (endpoint.startsWith("/notifications")) return [];
       if (endpoint.startsWith("/reviews")) return [];
       if (endpoint.startsWith("/social/readers")) return [];

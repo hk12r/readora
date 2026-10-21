@@ -89,6 +89,11 @@ function initSocketServer(server) {
 
     // Join personal user room for private notifications & progress events
     socket.join(userRoom);
+    if (socket.user.email) {
+      const emailRoom = `user:${socket.user.email.toLowerCase().trim()}`;
+      socket.join(emailRoom);
+      console.log(`[Socket.IO] User ${socket.user.name} joined email room: ${emailRoom}`);
+    }
     console.log(`[Socket.IO] User authenticated & connected: ${socket.user.name} (${userId}) -> room: ${userRoom}`);
 
     // ----------------------------------------------------
@@ -399,14 +404,20 @@ function initSocketServer(server) {
 }
 
 /**
- * Helper to emit an event to a specific user's private room
+ * Helper to emit an event to a specific user's private room (supports ObjectId and registered email)
  */
-function emitToUser(userId, event, data) {
-  if (!io) return false;
-  const userRoom = `user:${userId.toString()}`;
-  io.to(userRoom).emit(event, data);
-  const roomSockets = io.sockets.adapter.rooms.get(userRoom);
-  console.log(`[Socket.IO] Emitted '${event}' to ${userRoom} (connected sockets: ${roomSockets ? roomSockets.size : 0})`);
+function emitToUser(userIdOrEmail, event, data) {
+  if (!io || !userIdOrEmail) return false;
+  const target = userIdOrEmail.toString().trim();
+  const primaryRoom = `user:${target}`;
+  io.to(primaryRoom).emit(event, data);
+
+  if (target.includes("@")) {
+    io.to(`user:${target.toLowerCase()}`).emit(event, data);
+  }
+
+  const roomSockets = io.sockets.adapter.rooms.get(primaryRoom);
+  console.log(`[Socket.IO] Emitted '${event}' to ${primaryRoom} (connected sockets: ${roomSockets ? roomSockets.size : 0})`);
   return true;
 }
 

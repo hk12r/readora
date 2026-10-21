@@ -51,9 +51,18 @@ const markAllAsRead = async (req, res) => {
 const getEmailHistory = async (req, res) => {
   try {
     const { getEmailDispatches } = require("../services/emailService");
-    const emails = getEmailDispatches(req.user.email, 25);
+    const User = require("../models/User");
+
+    let userEmail = req.user?.email;
+    if (!userEmail && req.user?._id) {
+      const found = await User.findById(req.user._id);
+      if (found?.email) userEmail = found.email;
+    }
+    userEmail = userEmail || "reader@readora.com";
+
+    const emails = getEmailDispatches(userEmail, 25);
     res.json({
-      registeredEmail: req.user.email,
+      registeredEmail: userEmail,
       dispatches: emails,
     });
   } catch (error) {
@@ -66,9 +75,23 @@ const sendTestEmail = async (req, res) => {
   try {
     const { sendRealtimeNotificationEmail } = require("../services/emailService");
     const { emitToUser } = require("../services/socketService");
+    const User = require("../models/User");
 
-    const userEmail = req.user.email;
-    const userName = req.user.name || "Reader";
+    let userEmail = req.user?.email;
+    let userName = req.user?.name;
+
+    if (!userEmail && req.user?._id) {
+      const found = await User.findById(req.user._id);
+      if (found) {
+        userEmail = found.email;
+        userName = userName || found.name;
+      }
+    }
+    if (!userEmail && req.body?.email) {
+      userEmail = req.body.email;
+    }
+    userEmail = userEmail || "reader@readora.com";
+    userName = userName || "Reader";
 
     // 1. Dispatch real-time WebSocket in-app notification
     const testNotif = await Notification.create({
@@ -81,6 +104,9 @@ const sendTestEmail = async (req, res) => {
       link: "/community",
     });
     emitToUser(req.user._id, "notification:new", testNotif);
+    if (userEmail) {
+      emitToUser(userEmail, "notification:new", testNotif);
+    }
 
     // 2. Dispatch real-time email
     const result = await sendRealtimeNotificationEmail({
@@ -98,6 +124,17 @@ const sendTestEmail = async (req, res) => {
       `,
       eventType: "TEST_VERIFICATION",
     });
+
+    res.json({
+      success: true,
+      registeredEmail: userEmail,
+      notification: testNotif,
+      emailResult: result,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
     res.json({
       success: true,

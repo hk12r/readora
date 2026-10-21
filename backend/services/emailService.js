@@ -177,6 +177,38 @@ async function sendRealtimeNotificationEmail({
 }
 
 /**
+ * Dispatch when a user is invited to a Buddy Read
+ */
+async function notifyBuddyInvite({ recipientEmail, recipientName, senderName, buddyTitle, bookTitle }) {
+  if (!recipientEmail) return;
+
+  const contentHtml = `
+    <p>Hello <strong>${recipientName || "Reader"}</strong>,</p>
+    <div class="card-box">
+      <div style="font-size:14px; font-weight:bold; color:#652469; margin-bottom:6px;">
+        👥 Reading Companion Invitation from ${senderName}
+      </div>
+      <p style="margin:0; font-size:13px; color:#43281C;">
+        You have been invited to buddy-read <strong>"${bookTitle || buddyTitle}"</strong> together!
+      </p>
+    </div>
+    <p style="font-size:13px; color:#43281C;">
+      Track synchronized progress checkpoints (25%, 50%, 75%, 100%), chat live behind spoiler veils, and share chapter reactions as you read.
+    </p>
+  `;
+
+  return sendRealtimeNotificationEmail({
+    to: recipientEmail,
+    subject: `[Readora Buddy Read] ${senderName} invited you to read "${bookTitle || buddyTitle}" together! ✦`,
+    title: `You're Invited to a Buddy Read!`,
+    subtitle: `${senderName} wants to read with you`,
+    contentHtml,
+    eventType: "BUDDYREAD_INVITE",
+    metadata: { senderName, buddyTitle, bookTitle },
+  });
+}
+
+/**
  * Dispatch when a buddy read chat message is received
  */
 async function notifyBuddyMessage({ recipientEmail, recipientName, senderName, buddyTitle, bookTitle, messageText, page }) {
@@ -347,6 +379,7 @@ function getEmailDispatches(userEmail, limit = 20) {
 module.exports = {
   sendRealtimeNotificationEmail,
   sendOtpEmail,
+  notifyBuddyInvite,
   notifyBuddyMessage,
   notifyBuddyProgress,
   notifyMilestoneUnlocked,

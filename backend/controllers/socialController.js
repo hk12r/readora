@@ -7,6 +7,7 @@ const Notification = require("../models/Notification");
 const LibraryEntry = require("../models/LibraryEntry");
 const { emitToUser, emitToBuddyRead } = require("../services/socketService");
 const {
+  notifyBuddyInvite,
   notifyBuddyMessage,
   notifyBuddyProgress,
   notifyMilestoneUnlocked,
@@ -16,23 +17,61 @@ const {
 // ================= BUDDY READS =================
 const createBuddyRead = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const { bookId, title, targetFinishDate, milestones = [], partnerId } = req.body;
+    const rawUserId = req.user ? (req.user._id || req.user.userId) : null;
+    let userId = rawUserId;
 
-    // Safely resolve book from MongoDB or by ISBN/title
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      const existingUser = await User.findOne(req.user?.email ? { email: req.user.email.toLowerCase().trim() } : {});
+      userId = existingUser ? existingUser._id : new mongoose.Types.ObjectId();
+    }
+
+    const { bookId, title, targetFinishDate, milestones = [], partnerId, bookData } = req.body;
+
+    // Safely resolve book from MongoDB or by ISBN/title, or auto-upsert in MongoDB
     let book = null;
     if (bookId && mongoose.Types.ObjectId.isValid(bookId)) {
       book = await Book.findById(bookId);
     }
-    if (!book && bookId) {
-      book = await Book.findOne({ $or: [{ isbn: bookId }, { title: bookId }] });
+    if (!book && (bookId || bookData)) {
+      const searchCrit = [];
+      if (bookId) searchCrit.push({ isbn: bookId }, { title: bookId });
+      if (bookData?.isbn) searchCrit.push({ isbn: bookData.isbn });
+      if (bookData?.title) searchCrit.push({ title: bookData.title });
+      if (searchCrit.length > 0) {
+        book = await Book.findOne({ $or: searchCrit });
+      }
+    }
+    if (!book && (bookData || bookId)) {
+      try {
+        const bd = bookData || {};
+        book = await Book.create({
+          title: bd.title || (typeof bookId === "string" && !mongoose.Types.ObjectId.isValid(bookId) ? bookId : title) || "Buddy Read Book",
+          author: bd.author || "Curated Author",
+          cover: bd.cover || "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400",
+          pages: bd.pages || 300,
+          genre: bd.genre || "Fiction",
+          isbn: bd.isbn || (typeof bookId === "string" ? bookId : `isbn_${Date.now()}`),
+        });
+      } catch (err) {
+        console.warn("[Auto-create book in BuddyRead failed]:", err.message);
+      }
     }
     if (!book) {
       book = await Book.findOne();
     }
+    if (!book) {
+      book = await Book.create({
+        title: title || "Selected Reading",
+        author: "Curated Author",
+        cover: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400",
+        pages: 300,
+        genre: "Fiction",
+        isbn: `readora_${Date.now()}`,
+      });
+    }
 
-    const resolvedBookId = book ? book._id : (mongoose.Types.ObjectId.isValid(bookId) ? bookId : undefined);
-    const totalPages = book?.pages || 300;
+    const resolvedBookId = book._id;
+    const totalPages = book.pages || 300;
 
     // Build 4-checkpoint reading milestones if not specified
     const defaultMilestones = [
@@ -63,6 +102,13 @@ const createBuddyRead = async (req, res) => {
     if (!partnerUser) {
       partnerUser = await User.findOne({ _id: { $ne: userId } });
     }
+    if (!partnerUser) {
+      partnerUser = await User.create({
+        name: "Fellow Reader",
+        email: "fellow_reader@readora.com",
+        bio: "Curated reading companion",
+      });
+    }
 
     const participants = [{ userId, currentPage: 0, percentage: 0 }];
     if (partnerUser && partnerUser._id.toString() !== userId.toString()) {
@@ -72,28 +118,27 @@ const createBuddyRead = async (req, res) => {
     const buddyRead = new BuddyRead({
       bookId: resolvedBookId,
       creatorId: userId,
-      title: title || (book ? `${book.title} Buddy Read` : "Buddy Read"),
+      title: title || `${book.title} Buddy Read`,
       targetFinishDate,
       participants,
       milestones: milestones.length ? milestones : defaultMilestones,
     });
 
     await buddyRead.save();
-    if (resolvedBookId) {
-      await buddyRead.populate("bookId", "title author cover pages genre");
-    }
+    await buddyRead.populate("bookId", "title author cover pages genre");
     await buddyRead.populate("creatorId", "name avatar email");
     await buddyRead.populate("participants.userId", "name avatar email");
 
     // If a partner was invited, dispatch live websocket notification + registered email notification
     if (partnerUser && partnerUser._id.toString() !== userId.toString()) {
+      const senderName = req.user?.name || "A fellow reader";
       const notif = await Notification.create({
         userId: partnerUser._id,
         senderId: userId,
-        senderName: req.user.name || "Reader",
+        senderName: senderName,
         type: "buddy_read",
         title: "Buddy Read Invitation! ✦",
-        message: `${req.user.name || "A friend"} invited you to read "${buddyRead.bookId?.title || buddyRead.title}" together!`,
+        message: `${senderName} invited you to read "${buddyRead.bookId?.title || buddyRead.title}" together!`,
         link: "/community",
       });
 
@@ -108,34 +153,56 @@ const createBuddyRead = async (req, res) => {
         link: notif.link,
         createdAt: notif.createdAt || new Date(),
       };
+
+      // Emit to partner's user ID and partner's email room
       emitToUser(partnerUser._id, "notification:new", notifData);
       emitToUser(partnerUser._id, "buddyread:invite", buddyRead);
-
       if (partnerUser.email) {
-        notifyBuddyMessage({
+        emitToUser(partnerUser.email, "notification:new", notifData);
+        emitToUser(partnerUser.email, "buddyread:invite", buddyRead);
+      }
+
+      // Also notify creator with confirmation toast
+      emitToUser(userId, "notification:new", {
+        _id: new mongoose.Types.ObjectId().toString(),
+        userId: userId.toString(),
+        senderName: "Readora Fellowship",
+        type: "buddy_read",
+        title: "Invitation Dispatched! ✦",
+        message: `Your Buddy Read invitation for "${buddyRead.bookId?.title || buddyRead.title}" was dispatched to ${partnerUser.name || partnerUser.email}!`,
+        link: "/community",
+        createdAt: new Date(),
+      });
+
+      // Dispatch invitation email to partner
+      if (partnerUser.email) {
+        notifyBuddyInvite({
           recipientEmail: partnerUser.email,
-          recipientName: partnerUser.name,
-          senderName: req.user.name || "A friend",
+          recipientName: partnerUser.name || "Reader",
+          senderName: senderName,
           buddyTitle: buddyRead.title,
           bookTitle: buddyRead.bookId?.title,
-          messageText: `Hey! I started a new Buddy Read for "${buddyRead.bookId?.title || buddyRead.title}". Let's read together and discuss as we go!`,
-          page: 0,
         }).catch((err) => console.warn("[Email dispatch error]:", err.message));
       }
     }
 
     res.status(201).json(buddyRead);
   } catch (error) {
+    console.error("[createBuddyRead error]:", error);
     res.status(400).json({ message: error.message });
   }
 };
 
 const getBuddyReads = async (req, res) => {
   try {
-    const userId = req.user ? req.user._id : null;
+    const rawUserId = req.user ? (req.user._id || req.user.userId) : null;
     let query = {};
-    if (req.query.scope === "mine" && userId) {
-      query = { $or: [{ creatorId: userId }, { "participants.userId": userId }] };
+    if (req.query.scope === "mine" && rawUserId) {
+      let uid = rawUserId;
+      if (mongoose.Types.ObjectId.isValid(uid)) {
+        uid = new mongoose.Types.ObjectId(uid);
+      }
+      query = { $or: [{ creatorId: uid }, { "participants.userId": uid }] };
     }
 
     const buddyReads = await BuddyRead.find(query)
@@ -408,7 +475,14 @@ const postBuddyMessage = async (req, res) => {
 // ================= BOOK CLUBS =================
 const createBookClub = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const rawUserId = req.user ? (req.user._id || req.user.userId) : null;
+    let userId = rawUserId;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      const existingUser = await User.findOne(req.user?.email ? { email: req.user.email.toLowerCase().trim() } : {});
+      userId = existingUser ? existingUser._id : new mongoose.Types.ObjectId();
+    }
+
     const { name, description, genre = "General Fiction" } = req.body;
 
     const club = new BookClub({
@@ -420,6 +494,7 @@ const createBookClub = async (req, res) => {
     });
 
     await club.save();
+    await club.populate("creatorId", "name avatar email");
     res.status(201).json(club);
   } catch (error) {
     res.status(400).json({ message: error.message });

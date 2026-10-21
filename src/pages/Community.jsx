@@ -93,7 +93,22 @@ function Community() {
       return;
     }
     try {
-      const created = await api.createReview(newReviewData);
+      const selectedReviewBook = catalogBooks.find((b) => b._id === newReviewData.bookId);
+      const payload = {
+        ...newReviewData,
+        bookData: selectedReviewBook
+          ? {
+              title: selectedReviewBook.title,
+              author: selectedReviewBook.author,
+              cover: selectedReviewBook.cover,
+              genre: selectedReviewBook.genre,
+              pages: selectedReviewBook.pages,
+              isbn: selectedReviewBook.isbn || (typeof selectedReviewBook._id === "string" ? selectedReviewBook._id : ""),
+            }
+          : undefined,
+      };
+
+      const created = await api.createReview(payload);
       showToast("Review published to Community Feed! ✦");
       setCreateReviewModalOpen(false);
       setNewReviewData({
@@ -123,7 +138,18 @@ function Community() {
       ]);
 
       if (fData.status === "fulfilled" && fData.value) setFeed(fData.value);
-      if (bData.status === "fulfilled" && bData.value) setBuddyReads(bData.value);
+
+      // Merge server buddy reads with local storage cached buddy reads
+      let fetchedBuddyReads = (bData.status === "fulfilled" && Array.isArray(bData.value)) ? bData.value : [];
+      try {
+        const localCached = JSON.parse(localStorage.getItem("readora_cached_buddy_reads") || "[]");
+        const map = new Map();
+        fetchedBuddyReads.forEach((b) => { if (b && b._id) map.set(b._id, b); });
+        localCached.forEach((b) => { if (b && b._id && !map.has(b._id)) map.set(b._id, b); });
+        fetchedBuddyReads = Array.from(map.values());
+      } catch (_) {}
+
+      setBuddyReads(fetchedBuddyReads);
       if (cData.status === "fulfilled" && cData.value) setBookClubs(cData.value);
       if (rData.status === "fulfilled" && rData.value) setReaders(rData.value);
       if (booksData.status === "fulfilled" && booksData.value) {
@@ -165,6 +191,28 @@ function Community() {
     loadCommunityData();
     if (auth.user) loadEmailHistory();
   }, [auth.user]);
+
+  // Listen for real-time buddy read invitations
+  useEffect(() => {
+    if (!socket) return;
+    const handleBuddyInvite = (buddy) => {
+      if (buddy) {
+        setBuddyReads((prev) => {
+          const exists = prev.some((item) => item._id === buddy._id);
+          const updated = exists ? prev : [buddy, ...prev];
+          try {
+            localStorage.setItem("readora_cached_buddy_reads", JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+        showToast(`👥 Invitation to read "${buddy.title || "Book"}" received! ✦`, "info");
+      }
+    };
+    socket.on("buddyread:invite", handleBuddyInvite);
+    return () => {
+      socket.off("buddyread:invite", handleBuddyInvite);
+    };
+  }, [socket, showToast]);
 
   // Join Buddy Read room on select & attach real-time listeners
   useEffect(() => {
@@ -665,7 +713,16 @@ function Community() {
             {/* FEED ITEMS */}
             <div className="space-y-6">
               {/* WRITE REVIEW PROMPT CARD */}
-              <div className="rounded-3xl border border-readora-purple/15 bg-white/90 p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div
+                onClick={() => {
+                  if (!auth.user) {
+                    openAuthModal({ message: "Sign in to write and publish book reviews." });
+                    return;
+                  }
+                  setCreateReviewModalOpen(true);
+                }}
+                className="cursor-pointer rounded-3xl border border-readora-purple/15 bg-white/90 p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 hover:border-readora-gold hover:shadow-magical transition"
+              >
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-readora-purple/10 text-xl text-readora-purple font-bold">
                     ✍️
@@ -680,7 +737,15 @@ function Community() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setCreateReviewModalOpen(true)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!auth.user) {
+                      openAuthModal({ message: "Sign in to write and publish book reviews." });
+                      return;
+                    }
+                    setCreateReviewModalOpen(true);
+                  }}
                   className="rounded-full bg-readora-gold px-5 py-2.5 text-xs font-bold text-readora-purple shadow hover:bg-readora-goldLight transition whitespace-nowrap shrink-0"
                 >
                   + Write Review ✦
@@ -705,7 +770,10 @@ function Community() {
                             </p>
                             <p className="text-[10px] text-readora-brown/60">
                               Rated ★ {review.rating} •{" "}
-                              {new Date(review.createdAt).toLocaleDateString()}
+                              {(() => {
+                                const d = review.createdAt ? new Date(review.createdAt) : new Date();
+                                return isNaN(d.getTime()) ? "Recently" : d.toLocaleDateString();
+                              })()}
                             </p>
                           </div>
                         </div>
@@ -1410,10 +1478,31 @@ function Community() {
                   return;
                 }
                 try {
-                  const b = await api.createBuddyRead(newBuddyData);
+                  const payload = {
+                    ...newBuddyData,
+                    bookData: selectedBook
+                      ? {
+                          title: selectedBook.title,
+                          author: selectedBook.author,
+                          cover: selectedBook.cover,
+                          pages: selectedBook.pages,
+                          genre: selectedBook.genre,
+                          isbn: selectedBook.isbn || (typeof selectedBook._id === "string" ? selectedBook._id : ""),
+                        }
+                      : undefined,
+                  };
+
+                  const b = await api.createBuddyRead(payload);
                   showToast("Buddy Read created! Real-time invite dispatched to partner ✦");
                   setCreateBuddyModalOpen(false);
-                  setBuddyReads((prev) => [b, ...prev.filter((item) => item._id !== b._id)]);
+
+                  // Update state and persist in localStorage cache
+                  const updatedList = [b, ...buddyReads.filter((item) => item._id !== b._id)];
+                  setBuddyReads(updatedList);
+                  try {
+                    localStorage.setItem("readora_cached_buddy_reads", JSON.stringify(updatedList));
+                  } catch (_) {}
+
                   setSelectedBuddyRead(b);
                   setActiveTab("buddyReads");
                   await loadCommunityData();
@@ -1759,7 +1848,12 @@ function Community() {
                     >
                       <div className="flex items-center justify-between text-[10px] text-readora-brown/60">
                         <span className="font-bold text-readora-purple uppercase">{rec.eventType}</span>
-                        <span>{new Date(rec.timestamp).toLocaleTimeString()}</span>
+                        <span>
+                          {(() => {
+                            const d = rec.timestamp ? new Date(rec.timestamp) : new Date();
+                            return isNaN(d.getTime()) ? "Live" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                          })()}
+                        </span>
                       </div>
                       <p className="font-bold text-readora-purple mt-0.5">{rec.subject}</p>
                       <p className="text-[11px] text-emerald-700">✓ Dispatched to: {rec.to}</p>

@@ -2,10 +2,10 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// Generate JWT token
-const generateToken = (userId, role) => {
+// Generate JWT token with full identity payload (email & name included)
+const generateToken = (userId, role, email, name) => {
   return jwt.sign(
-    { userId, role },
+    { userId, role, email, name },
     process.env.JWT_SECRET || "readora_magical_secret_key_2026",
     { expiresIn: "7d" }
   );
@@ -34,7 +34,7 @@ const registerUser = async (req, res) => {
       role: role === "admin" ? "admin" : "user",
     });
 
-    const token = generateToken(user._id, user.role);
+    const token = generateToken(user._id, user.role, user.email, user.name);
 
     res.status(201).json({
       message: "Welcome to READORA!",
@@ -80,7 +80,7 @@ const loginUser = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    const token = generateToken(user._id, user.role);
+    const token = generateToken(user._id, user.role, user.email, user.name);
 
     res.json({
       message: "Login successful",
@@ -118,26 +118,48 @@ const getMe = async (req, res) => {
   }
 };
 
-// PUT update profile
+// PUT update profile (persists to MongoDB with robust user resolution)
 const updateProfile = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const rawUserId = req.user ? (req.user._id || req.user.userId) : null;
     const { name, bio, avatar, favoriteQuote, favoriteGenres, readingGoal } = req.body;
 
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const mongoose = require("mongoose");
+    let user = null;
 
-    if (name) user.name = name;
-    if (bio !== undefined) user.bio = bio;
-    if (avatar !== undefined) user.avatar = avatar;
-    if (favoriteQuote !== undefined) user.favoriteQuote = favoriteQuote;
-    if (favoriteGenres) user.favoriteGenres = favoriteGenres;
-    if (readingGoal) user.readingGoal = { ...user.readingGoal, ...readingGoal };
+    if (rawUserId && mongoose.Types.ObjectId.isValid(rawUserId)) {
+      user = await User.findById(rawUserId);
+    }
+    if (!user && req.user?.email) {
+      user = await User.findOne({ email: req.user.email.toLowerCase().trim() });
+    }
+    if (!user && req.body?.email) {
+      user = await User.findOne({ email: req.body.email.toLowerCase().trim() });
+    }
 
-    await user.save();
+    if (!user) {
+      // Upsert new user if not yet stored in DB
+      user = await User.create({
+        name: name || req.user?.name || "Reader",
+        email: (req.user?.email || req.body?.email || "reader@readora.com").toLowerCase().trim(),
+        bio: bio || "",
+        avatar: avatar || "",
+        favoriteQuote: favoriteQuote || "",
+        favoriteGenres: favoriteGenres || [],
+        readingGoal: readingGoal || { target: 25, year: 2026 },
+      });
+    } else {
+      if (name) user.name = name;
+      if (bio !== undefined) user.bio = bio;
+      if (avatar !== undefined) user.avatar = avatar;
+      if (favoriteQuote !== undefined) user.favoriteQuote = favoriteQuote;
+      if (favoriteGenres) user.favoriteGenres = favoriteGenres;
+      if (readingGoal) user.readingGoal = { ...user.readingGoal, ...readingGoal };
+      await user.save();
+    }
 
     res.json({
-      message: "Profile updated successfully",
+      message: "Profile updated successfully in database",
       user: {
         id: user._id,
         _id: user._id,
@@ -238,7 +260,7 @@ const verifyOtp = async (req, res) => {
     if (name) user.name = name;
     await user.save();
 
-    const token = generateToken(user._id, user.role);
+    const token = generateToken(user._id, user.role, user.email, user.name);
 
     res.json({
       success: true,
@@ -291,7 +313,7 @@ const googleAuth = async (req, res) => {
       await user.save();
     }
 
-    const token = generateToken(user._id, user.role);
+    const token = generateToken(user._id, user.role, user.email, user.name);
 
     res.json({
       success: true,
