@@ -1,9 +1,11 @@
+
 const Notification = require("../models/Notification");
 
 // GET all notifications for the user
 const getNotifications = async (req, res) => {
   try {
     const userId = req.user._id;
+
     const notifications = await Notification.find({ userId })
       .sort({ createdAt: -1 })
       .limit(30);
@@ -26,10 +28,12 @@ const getNotifications = async (req, res) => {
 const markAsRead = async (req, res) => {
   try {
     const userId = req.user._id;
+
     await Notification.findOneAndUpdate(
       { _id: req.params.id, userId },
       { read: true }
     );
+
     res.json({ message: "Marked as read" });
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -40,7 +44,12 @@ const markAsRead = async (req, res) => {
 const markAllAsRead = async (req, res) => {
   try {
     const userId = req.user._id;
-    await Notification.updateMany({ userId, read: false }, { read: true });
+
+    await Notification.updateMany(
+      { userId, read: false },
+      { read: true }
+    );
+
     res.json({ message: "All notifications marked as read" });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -54,13 +63,19 @@ const getEmailHistory = async (req, res) => {
     const User = require("../models/User");
 
     let userEmail = req.user?.email;
+
     if (!userEmail && req.user?._id) {
       const found = await User.findById(req.user._id);
-      if (found?.email) userEmail = found.email;
+
+      if (found?.email) {
+        userEmail = found.email;
+      }
     }
+
     userEmail = userEmail || "reader@readora.com";
 
     const emails = getEmailDispatches(userEmail, 25);
+
     res.json({
       registeredEmail: userEmail,
       dispatches: emails,
@@ -73,7 +88,10 @@ const getEmailHistory = async (req, res) => {
 // POST test real-time email dispatch
 const sendTestEmail = async (req, res) => {
   try {
-    const { sendRealtimeNotificationEmail } = require("../services/emailService");
+    const {
+      sendRealtimeNotificationEmail,
+    } = require("../services/emailService");
+
     const { emitToUser } = require("../services/socketService");
     const User = require("../models/User");
 
@@ -82,14 +100,17 @@ const sendTestEmail = async (req, res) => {
 
     if (!userEmail && req.user?._id) {
       const found = await User.findById(req.user._id);
+
       if (found) {
         userEmail = found.email;
         userName = userName || found.name;
       }
     }
+
     if (!userEmail && req.body?.email) {
       userEmail = req.body.email;
     }
+
     userEmail = userEmail || "reader@readora.com";
     userName = userName || "Reader";
 
@@ -103,10 +124,9 @@ const sendTestEmail = async (req, res) => {
       message: `WebSocket & Email updates active for registered email: ${userEmail}`,
       link: "/community",
     });
+
     emitToUser(req.user._id, "notification:new", testNotif);
-    if (userEmail) {
-      emitToUser(userEmail, "notification:new", testNotif);
-    }
+    emitToUser(userEmail, "notification:new", testNotif);
 
     // 2. Dispatch real-time email
     const result = await sendRealtimeNotificationEmail({
@@ -124,17 +144,6 @@ const sendTestEmail = async (req, res) => {
       `,
       eventType: "TEST_VERIFICATION",
     });
-
-    res.json({
-      success: true,
-      registeredEmail: userEmail,
-      notification: testNotif,
-      emailResult: result,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
 
     res.json({
       success: true,
