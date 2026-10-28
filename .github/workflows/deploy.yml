@@ -29,27 +29,27 @@ jobs:
         run: npm run build
 
   
-  verify-backend:
-    name: Test Backend
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install Backend Dependencies
-        run: npm install
-
-      - name: Run Backend Verification Tests
-        run: npm test
-        env:
-          MONGO_URI: ${{ secrets.MONGO_URI }}
+ 
+    verify-backend:
+      name: Test Backend
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout Repository
+          uses: actions/checkout@v4
+  
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: 22
+  
+        - name: Install Backend Dependencies
+          run: npm install --prefix backend --no-audit --no-fund
+  
+        - name: Verify Express Installation
+          run: node -e "console.log('Express version:', require('express/package.json').version)"
+          working-directory: backend
+  
+        - name: Run Backend Verification Tests
+          run: npm test --prefix backend
+          env:
+            MONGO_URI: ${{ secrets.MONGO_URI }}
