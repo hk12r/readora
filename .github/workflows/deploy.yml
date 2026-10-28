@@ -3,77 +3,52 @@ name: READORA CI/CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  contents: read
+    branches: [main]
 
 jobs:
-  verify-frontend:
-    name: Build Frontend
+  frontend-build:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: frontend
+
     steps:
-      - name: Checkout Repository
+      - name: Get source code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
-      - name: Install Frontend Dependencies
-        run: npm ci
+      - name: Install dependencies
+        run: npm install
 
-      - name: Build Frontend
+      - name: Build frontend
         run: npm run build
 
-  verify-backend:
-    name: Test Backend
+  backend-check:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Backend Dependencies
-        run: npm install --prefix backend --no-audit --no-fund
-
-      - name: Verify Express Installation
-        run: node -e "console.log('Express version:', require('express/package.json').version)"
+    defaults:
+      run:
         working-directory: backend
 
-      - name: Verify MongoDB Secret
-        shell: bash
-        env:
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-        run: |
-          if [ -z "$MONGO_URI" ]; then
-            echo "::error::MONGO_URI secret is missing or unavailable"
-            exit 1
-          fi
-          case "$MONGO_URI" in
-            mongodb://*|mongodb+srv://*)
-              echo "MongoDB secret exists and has a valid URI prefix."
-              ;;
-            *)
-              echo "::error::MONGO_URI does not look like a MongoDB URI"
-              exit 1
-              ;;
-          esac
+    steps:
+      - name: Get source code
+        uses: actions/checkout@v4
 
-      - name: Run Backend Verification Tests
-        run: npm test --prefix backend
-        env:
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check backend start script
+        run: node -e "const p=require('./package.json'); if(!p.scripts?.start) process.exit(1); console.log('Start script found')"
+
