@@ -53,7 +53,27 @@ jobs:
         run: node -e "console.log('Express version:', require('express/package.json').version)"
         working-directory: backend
 
+      - name: Verify MongoDB Secret
+        shell: bash
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: |
+          if [ -z "$MONGO_URI" ]; then
+            echo "::error::MONGO_URI secret is missing or unavailable"
+            exit 1
+          fi
+          case "$MONGO_URI" in
+            mongodb://*|mongodb+srv://*)
+              echo "MongoDB secret exists and has a valid URI prefix."
+              ;;
+            *)
+              echo "::error::MONGO_URI does not look like a MongoDB URI"
+              exit 1
+              ;;
+          esac
+
       - name: Run Backend Verification Tests
         run: npm test --prefix backend
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
